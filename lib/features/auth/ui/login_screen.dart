@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../viewmodel/auth_viewmodel.dart';
-import '../../dashboard/ui/passenger_dashboard_screen.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../bloc/auth_bloc.dart';
+import '../bloc/auth_event.dart';
+import '../bloc/auth_state.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,47 +19,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _authViewModel = AuthViewModel();
   bool _obscurePassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _authViewModel.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  void _handleLogin() {
     if (_formKey.currentState!.validate()) {
-      final success = await _authViewModel.loginPassenger(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+      context.read<AuthBloc>().add(
+        LoginRequested(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        ),
       );
-
-      if (mounted) {
-        if (success) {
-          // Navigate to Dashboard on success, removing the login route from stack
-          Navigator.pushAndRemoveUntil(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, _, _) => const PassengerDashboardScreen(),
-              transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 600),
-            ),
-            (route) => false,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_authViewModel.errorMessage ?? 'Authentication failed.'),
-              backgroundColor: Colors.redAccent,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-        }
-      }
     }
   }
 
@@ -67,9 +45,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
-      body: ListenableBuilder(
-        listenable: _authViewModel,
-        builder: (context, _) {
+      body: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.redAccent,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          }
+        },
+        builder: (context, state) {
           return Stack(
             children: [
               // ── DARK: Dot pattern + ambient glows ──
@@ -245,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Sign In button
                           _buildPrimaryButton(
                             label: 'Sign in',
-                            isLoading: _authViewModel.isLoading,
+                            isLoading: state is AuthLoading,
                             onPressed: _handleLogin,
                           ).animate().fade(delay: 600.ms).slideY(begin: 0.15, end: 0),
 

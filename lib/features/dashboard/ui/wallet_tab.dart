@@ -1,132 +1,160 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../wallet/viewmodel/wallet_viewmodel.dart';
+import '../../wallet/bloc/wallet_bloc.dart';
+import '../../wallet/bloc/wallet_event.dart';
+import '../../wallet/bloc/wallet_state.dart';
 import '../../../core/models/models.dart';
 
-class WalletTab extends StatefulWidget {
-  final WalletViewModel viewModel;
-  const WalletTab({super.key, required this.viewModel});
+class WalletTab extends StatelessWidget {
+  const WalletTab({super.key});
 
-  @override
-  State<WalletTab> createState() => _WalletTabState();
-}
-
-class _WalletTabState extends State<WalletTab> {
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.viewModel,
-      builder: (context, _) {
-        final vm = widget.viewModel;
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Text('My Wallet', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white))
-                  .animate().fade(duration: 500.ms),
-              const SizedBox(height: 4),
-              Text('Manage your balance & transactions', style: GoogleFonts.inter(fontSize: 14, color: Colors.white54))
-                  .animate().fade(delay: 100.ms),
-              const SizedBox(height: 24),
-
-              // ── Balance Card ──
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1B8C3A), Color(0xFF0A3D1E)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(color: const Color(0xFF28A745).withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 10)),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Smart Transit Wallet', style: GoogleFonts.inter(color: Colors.white60, fontSize: 13)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
-                          child: Text('Active', style: GoogleFonts.inter(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      vm.isLoading ? 'Loading...' : 'LKR ${vm.balance.toStringAsFixed(2)}',
-                      style: GoogleFonts.inter(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('Available Balance', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
-                    const SizedBox(height: 20),
-                    // Decorative dots
-                    Row(children: List.generate(4, (i) => Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      child: Row(children: List.generate(4, (_) => Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 4),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle))),
-                      ),
-                    ))),
-                  ],
-                ),
-              ).animate(delay: 150.ms).fade().slideY(begin: 0.1, end: 0),
-
-              const SizedBox(height: 20),
-
-              // ── Top Up Button ──
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFF1B8C3A), Color(0xFF28A745)]),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: const Color(0xFF28A745).withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
-                  ),
-                  child: ElevatedButton.icon(
-                    onPressed: vm.isTopUpLoading ? null : () => _showTopUpSheet(context),
-                    icon: vm.isTopUpLoading
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.add_rounded, color: Colors.white),
-                    label: Text('Top Up Balance', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent, shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-              ).animate(delay: 200.ms).fade(),
-
-              const SizedBox(height: 28),
-
-              // ── Transaction History ──
-              Text('Transaction History', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
-                  .animate(delay: 250.ms).fade(),
-              const SizedBox(height: 14),
-
-              if (vm.isLoading)
-                const Center(child: CircularProgressIndicator(color: Color(0xFF28A745)))
-              else if (vm.transactions.isEmpty)
-                _emptyTransactions()
-              else
-                ...vm.transactions.asMap().entries.map((e) =>
-                    _TransactionCard(tx: e.value).animate(delay: Duration(milliseconds: 300 + e.key * 60)).fade().slideX(begin: 0.05, end: 0)
-                ),
-            ],
-          ),
-        );
+    return BlocListener<WalletBloc, WalletState>(
+      listener: (context, state) {
+        if (state is PaymentIntentSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment Intent created! (Stripe Sheet: Phase 2 wiring)'),
+              backgroundColor: Color(0xFF28A745),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else if (state is WalletError) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       },
+      child: BlocBuilder<WalletBloc, WalletState>(
+        builder: (context, state) {
+          double balance = 0.0;
+          var transactions = const <Transaction>[];
+          final bool isLoader = state is WalletLoading;
+
+          if (state is WalletLoaded) {
+            balance = state.balance;
+            transactions = state.transactions;
+          } else if (state is PaymentIntentSuccess) {
+            balance = state.balance;
+            transactions = state.transactions;
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Text('My Wallet', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white))
+                    .animate().fade(duration: 500.ms),
+                const SizedBox(height: 4),
+                Text('Manage your balance & transactions', style: GoogleFonts.inter(fontSize: 14, color: Colors.white54))
+                    .animate().fade(delay: 100.ms),
+                const SizedBox(height: 24),
+
+                // ── Balance Card ──
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1B8C3A), Color(0xFF0A3D1E)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(color: const Color(0xFF28A745).withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 10)),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Smart Transit Wallet', style: GoogleFonts.inter(color: Colors.white60, fontSize: 13)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                            child: Text('Active', style: GoogleFonts.inter(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        isLoader ? 'Loading...' : 'LKR ${balance.toStringAsFixed(2)}',
+                        style: GoogleFonts.inter(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text('Available Balance', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 20),
+                      // Decorative dots
+                      Row(children: List.generate(4, (i) => Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        child: Row(children: List.generate(4, (_) => Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 4),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle))),
+                        ),
+                      ))),
+                    ],
+                  ),
+                ).animate(delay: 150.ms).fade().slideY(begin: 0.1, end: 0),
+
+                const SizedBox(height: 20),
+
+                // ── Top Up Button ──
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF1B8C3A), Color(0xFF28A745)]),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: const Color(0xFF28A745).withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                    ),
+                    child: ElevatedButton.icon(
+                      onPressed: isLoader ? null : () => _showTopUpSheet(context),
+                      icon: isLoader
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.add_rounded, color: Colors.white),
+                      label: Text('Top Up Balance', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent, shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                ).animate(delay: 200.ms).fade(),
+
+                const SizedBox(height: 28),
+
+                // ── Transaction History ──
+                Text('Transaction History', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
+                    .animate(delay: 250.ms).fade(),
+                const SizedBox(height: 14),
+
+                if (isLoader && transactions.isEmpty)
+                  const Center(child: CircularProgressIndicator(color: Color(0xFF28A745)))
+                else if (transactions.isEmpty)
+                  _emptyTransactions()
+                else
+                  ...transactions.asMap().entries.map((e) =>
+                      _TransactionCard(tx: e.value).animate(delay: Duration(milliseconds: 300 + e.key * 60)).fade().slideX(begin: 0.05, end: 0)
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -205,14 +233,9 @@ class _WalletTabState extends State<WalletTab> {
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
-                      onPressed: () async {
+                      onPressed: () {
                         Navigator.pop(ctx);
-                        final secret = await widget.viewModel.createPaymentIntent(selected);
-                        if (secret != null && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Payment Intent created! (Stripe Sheet: Phase 2 wiring)'), backgroundColor: const Color(0xFF28A745)),
-                          );
-                        }
+                        context.read<WalletBloc>().add(CreatePaymentIntentRequested(selected));
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF28A745),
