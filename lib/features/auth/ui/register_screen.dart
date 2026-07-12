@@ -4,9 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../viewmodel/auth_viewmodel.dart';
-import '../../dashboard/ui/passenger_dashboard_screen.dart';
-
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../bloc/auth_bloc.dart';
+import '../bloc/auth_event.dart';
+import '../bloc/auth_state.dart';
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -19,7 +20,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _authViewModel = AuthViewModel();
   bool _obscurePassword = true;
   bool _agreedToTerms = false;
 
@@ -28,11 +28,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _fullNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _authViewModel.dispose();
     super.dispose();
   }
 
-  Future<void> _handleRegister() async {
+  void _handleRegister() {
     if (!_agreedToTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -46,35 +45,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (_formKey.currentState!.validate()) {
-      final success = await _authViewModel.registerPassenger(
-        email: _emailController.text.trim(),
-        fullName: _fullNameController.text.trim(),
-        password: _passwordController.text,
+      context.read<AuthBloc>().add(
+        RegisterRequested(
+          email: _emailController.text.trim(),
+          fullName: _fullNameController.text.trim(),
+          password: _passwordController.text,
+        ),
       );
-
-      if (mounted) {
-        if (success) {
-          // Navigate to Dashboard on success, removing all previous routes
-          Navigator.pushAndRemoveUntil(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const PassengerDashboardScreen(),
-              transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 600),
-            ),
-            (route) => false,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_authViewModel.errorMessage ?? 'Registration failed.'),
-              backgroundColor: Colors.redAccent,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-        }
-      }
     }
   }
 
@@ -84,9 +61,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
-      body: ListenableBuilder(
-        listenable: _authViewModel,
-        builder: (context, _) {
+      body: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (state is AuthError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.redAccent,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          }
+        },
+        builder: (context, state) {
           return Stack(
             children: [
               // ── DARK: Dot pattern + ambient glows ──
@@ -337,7 +325,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         // Create Account button
                         _buildPrimaryButton(
                           label: 'Create Account',
-                          isLoading: _authViewModel.isLoading,
+                          isLoading: state is AuthLoading,
                           onPressed: _handleRegister,
                         ).animate().fade(delay: 700.ms).slideY(begin: 0.15, end: 0),
 

@@ -1,181 +1,210 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../home/viewmodel/home_viewmodel.dart';
-import '../../wallet/viewmodel/wallet_viewmodel.dart';
+import '../../auth/bloc/auth_bloc.dart';
+import '../../auth/bloc/auth_state.dart';
+import '../../wallet/bloc/wallet_bloc.dart';
+import '../../wallet/bloc/wallet_state.dart';
 import '../../ticket/ui/qr_ticket_screen.dart';
 import '../../tracking/ui/tracking_screen.dart';
 
-class HomeTab extends StatefulWidget {
-  final HomeViewModel viewModel;
-  final WalletViewModel walletVM;
+class HomeTab extends StatelessWidget {
   final VoidCallback onWalletTap;
 
   const HomeTab({
     super.key,
-    required this.viewModel,
-    required this.walletVM,
     required this.onWalletTap,
   });
 
-  @override
-  State<HomeTab> createState() => _HomeTabState();
-}
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }
 
-class _HomeTabState extends State<HomeTab> {
+  String _getInitials(String name) {
+    if (name.isEmpty) return 'P';
+    final parts = name.trim().split(' ');
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Listenable.merge([widget.viewModel, widget.walletVM]),
-      builder: (context, _) {
-        final vm = widget.viewModel;
-        final profile = vm.profile;
+    return BlocBuilder<AuthBloc, AuthState>(
+      builder: (context, authState) {
+        String name = 'Passenger';
+        String initials = 'P';
+        final greeting = _getGreeting();
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        if (authState is AuthAuthenticated) {
+          final user = authState.user;
+          final fullName = user['fullName'] ?? 'Passenger';
+          name = fullName.split(' ')[0];
+          initials = _getInitials(fullName);
+        }
 
-              // ── Header ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return BlocBuilder<WalletBloc, WalletState>(
+          builder: (context, walletState) {
+            double balance = 0.0;
+            final bool isWalletLoading = walletState is WalletLoading;
+
+            if (walletState is WalletLoaded) {
+              balance = walletState.balance;
+            } else if (walletState is PaymentIntentSuccess) {
+              balance = walletState.balance;
+            }
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // ── Header ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        vm.isLoading ? 'Loading...' : vm.greeting,
-                        style: GoogleFonts.inter(fontSize: 14, color: Colors.white54),
-                      ),
-                      Text(
-                        vm.isLoading ? '' : (profile?.firstName ?? 'Passenger'),
-                        style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ],
-                  ),
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: const Color(0xFF28A745).withOpacity(0.15),
-                    child: Text(
-                      vm.isLoading ? '...' : (profile?.initials ?? 'P'),
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF28A745)),
-                    ),
-                  ),
-                ],
-              ).animate().fade(duration: 500.ms).slideX(begin: -0.05, end: 0),
-
-              const SizedBox(height: 24),
-
-              // ── Wallet Balance Strip ──
-              GestureDetector(
-                onTap: widget.onWalletTap,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1B8C3A), Color(0xFF0D5C22)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(color: const Color(0xFF28A745).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            greeting,
+                            style: GoogleFonts.inter(fontSize: 14, color: Colors.white54),
+                          ),
+                          Text(
+                            name,
+                            style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
                         ],
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: const Color(0xFF28A745).withOpacity(0.15),
+                        child: Text(
+                          initials,
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF28A745)),
+                        ),
+                      ),
+                    ],
+                  ).animate().fade(duration: 500.ms).slideX(begin: -0.05, end: 0),
+
+                  const SizedBox(height: 24),
+
+                  // ── Wallet Balance Strip ──
+                  GestureDetector(
+                    onTap: onWalletTap,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF1B8C3A), Color(0xFF0D5C22)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(color: const Color(0xFF28A745).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8)),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Wallet Balance', style: GoogleFonts.inter(color: Colors.white60, fontSize: 13)),
-                              const SizedBox(height: 6),
-                              Text(
-                                widget.walletVM.isLoading ? '...' : 'LKR ${widget.walletVM.balance.toStringAsFixed(2)}',
-                                style: GoogleFonts.inter(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Wallet Balance', style: GoogleFonts.inter(color: Colors.white60, fontSize: 13)),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    isWalletLoading ? '...' : 'LKR ${balance.toStringAsFixed(2)}',
+                                    style: GoogleFonts.inter(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 26),
                               ),
                             ],
                           ),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 26),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ).animate(delay: 100.ms).fade().slideY(begin: 0.1, end: 0),
+                  ).animate(delay: 100.ms).fade().slideY(begin: 0.1, end: 0),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              // ── Quick Actions ──
-              Text('Quick Actions', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
-                  .animate(delay: 150.ms).fade(),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _QuickAction(
-                    icon: Icons.qr_code_rounded,
-                    label: 'Board Bus',
-                    color: const Color(0xFF28A745),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const QrTicketScreen()),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  _QuickAction(icon: Icons.add_card_rounded, label: 'Top Up', color: const Color(0xFF2196F3), onTap: widget.onWalletTap),
-                  const SizedBox(width: 12),
-                  _QuickAction(icon: Icons.history_rounded, label: 'History', color: const Color(0xFF9C27B0), onTap: widget.onWalletTap),
-                  const SizedBox(width: 12),
-                  _QuickAction(
-                    icon: Icons.map_outlined,
-                    label: 'Track',
-                    color: const Color(0xFFFF9800),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TrackingScreen()),
-                      );
-                    },
-                  ),
+                  // ── Quick Actions ──
+                  Text('Quick Actions', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
+                      .animate(delay: 150.ms).fade(),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _QuickAction(
+                        icon: Icons.qr_code_rounded,
+                        label: 'Board Bus',
+                        color: const Color(0xFF28A745),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const QrTicketScreen()),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                      _QuickAction(icon: Icons.add_card_rounded, label: 'Top Up', color: const Color(0xFF2196F3), onTap: onWalletTap),
+                      const SizedBox(width: 12),
+                      _QuickAction(icon: Icons.history_rounded, label: 'History', color: const Color(0xFF9C27B0), onTap: onWalletTap),
+                      const SizedBox(width: 12),
+                      _QuickAction(
+                        icon: Icons.map_outlined,
+                        label: 'Track',
+                        color: const Color(0xFFFF9800),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const TrackingScreen()),
+                          );
+                        },
+                      ),
+                    ],
+                  ).animate(delay: 200.ms).fade(),
+
+                  const SizedBox(height: 28),
+
+                  // ── Recent Journeys Section ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Recent Journeys', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                      Text('See All', style: GoogleFonts.inter(color: const Color(0xFF28A745), fontSize: 13)),
+                    ],
+                  ).animate(delay: 250.ms).fade(),
+                  const SizedBox(height: 14),
+
+                  // Journey Cards (placeholder until Phase 3)
+                  ...[
+                    const _JourneyCard(from: 'Colombo Fort', to: 'Nugegoda', fare: 'LKR 45.00', date: 'Today, 8:20 AM', status: 'Completed'),
+                    const _JourneyCard(from: 'Maharagama', to: 'Colombo Fort', fare: 'LKR 60.00', date: 'Yesterday, 6:45 PM', status: 'Completed'),
+                    const _JourneyCard(from: 'Pettah', to: 'Kaduwela', fare: 'LKR 35.00', date: 'May 19, 9:10 AM', status: 'Completed'),
+                  ].asMap().entries.map((e) => e.value.animate(delay: Duration(milliseconds: 300 + e.key * 80)).fade().slideY(begin: 0.1, end: 0)),
                 ],
-              ).animate(delay: 200.ms).fade(),
-
-              const SizedBox(height: 28),
-
-              // ── Recent Journeys Section ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Recent Journeys', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
-                  Text('See All', style: GoogleFonts.inter(color: const Color(0xFF28A745), fontSize: 13)),
-                ],
-              ).animate(delay: 250.ms).fade(),
-              const SizedBox(height: 14),
-
-              // Journey Cards (placeholder until Phase 3)
-              ...[
-                _JourneyCard(from: 'Colombo Fort', to: 'Nugegoda', fare: 'LKR 45.00', date: 'Today, 8:20 AM', status: 'Completed'),
-                _JourneyCard(from: 'Maharagama', to: 'Colombo Fort', fare: 'LKR 60.00', date: 'Yesterday, 6:45 PM', status: 'Completed'),
-                _JourneyCard(from: 'Pettah', to: 'Kaduwela', fare: 'LKR 35.00', date: 'May 19, 9:10 AM', status: 'Completed'),
-              ].asMap().entries.map((e) => e.value.animate(delay: Duration(milliseconds: 300 + e.key * 80)).fade().slideY(begin: 0.1, end: 0)),
-            ],
-          ),
+              ),
+            );
+          },
         );
       },
     );

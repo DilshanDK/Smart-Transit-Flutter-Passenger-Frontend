@@ -1,21 +1,43 @@
 // ignore_for_file: unnecessary_underscores, deprecated_member_use
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../home/viewmodel/home_viewmodel.dart';
-import '../../../core/storage/secure_storage.dart';
-import '../../auth/ui/auth_wrapper.dart';
+import '../../auth/bloc/auth_bloc.dart';
+import '../../auth/bloc/auth_event.dart';
+import '../../auth/bloc/auth_state.dart';
 
 class ProfileTab extends StatelessWidget {
-  final HomeViewModel homeVM;
-  const ProfileTab({super.key, required this.homeVM});
+  const ProfileTab({super.key});
+
+  String _getInitials(String name) {
+    if (name.isEmpty) return 'P';
+    final parts = name.trim().split(' ');
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: homeVM,
-      builder: (context, _) {
-        final profile = homeVM.profile;
+    return BlocBuilder<AuthBloc, AuthState>(
+      builder: (context, state) {
+        String name = 'Passenger';
+        String email = '';
+        String initials = 'P';
+        String? nfcUid = 'Not linked';
+
+        if (state is AuthAuthenticated) {
+          final user = state.user;
+          name = user['fullName'] ?? 'Passenger';
+          email = user['email'] ?? '';
+          initials = _getInitials(name);
+          nfcUid = user['nfcUid'] as String?;
+        }
+
+        final bool isLoader = state is AuthLoading;
+
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
           child: Column(
@@ -36,18 +58,18 @@ class ProfileTab extends StatelessWidget {
                       radius: 44,
                       backgroundColor: const Color(0xFF28A745).withOpacity(0.15),
                       child: Text(
-                        homeVM.isLoading ? '..' : (profile?.initials ?? 'P'),
+                        initials,
                         style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: const Color(0xFF28A745)),
                       ),
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      homeVM.isLoading ? 'Loading...' : (profile?.fullName ?? 'Passenger'),
+                      name,
                       style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      homeVM.isLoading ? '' : (profile?.email ?? ''),
+                      email,
                       style: GoogleFonts.inter(fontSize: 13, color: Colors.white54),
                     ),
                     const SizedBox(height: 10),
@@ -68,7 +90,7 @@ class ProfileTab extends StatelessWidget {
 
               // ── Settings Tiles ──
               _SettingsTile(icon: Icons.person_outline_rounded, label: 'Edit Profile', onTap: () {}),
-              _SettingsTile(icon: Icons.nfc_rounded, label: 'Linked NFC Card', subtitle: profile?.nfcUid ?? 'Not linked', onTap: () {}),
+              _SettingsTile(icon: Icons.nfc_rounded, label: 'Linked NFC Card', subtitle: nfcUid ?? 'Not linked', onTap: () {}),
               _SettingsTile(icon: Icons.notifications_outlined, label: 'Notifications', onTap: () {}),
               _SettingsTile(icon: Icons.lock_outline_rounded, label: 'Change Password', onTap: () {}),
               _SettingsTile(icon: Icons.help_outline_rounded, label: 'Help & Support', onTap: () {}),
@@ -84,7 +106,7 @@ class ProfileTab extends StatelessWidget {
                 label: 'Log Out',
                 labelColor: Colors.redAccent,
                 iconColor: Colors.redAccent,
-                onTap: () => _confirmLogout(context),
+                onTap: isLoader ? () {} : () => _confirmLogout(context),
               ),
             ],
           ),
@@ -107,20 +129,9 @@ class ProfileTab extends StatelessWidget {
             child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white54)),
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(ctx);
-              await SecureStorage.clearTokens();
-              if (context.mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (_, __, ___) => const AuthWrapper(),
-                    transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-                    transitionDuration: const Duration(milliseconds: 400),
-                  ),
-                  (route) => false,
-                );
-              }
+              context.read<AuthBloc>().add(const LogoutRequested());
             },
             child: Text('Log Out', style: GoogleFonts.inter(color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
@@ -173,7 +184,7 @@ class _SettingsTile extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 20),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 20),
           ],
         ),
       ),

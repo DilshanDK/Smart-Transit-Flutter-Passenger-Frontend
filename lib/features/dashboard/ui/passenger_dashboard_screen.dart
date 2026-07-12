@@ -3,8 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../home/viewmodel/home_viewmodel.dart';
-import '../../wallet/viewmodel/wallet_viewmodel.dart';
 import 'home_tab.dart';
 import 'wallet_tab.dart';
 import 'profile_tab.dart';
@@ -18,15 +16,6 @@ class PassengerDashboardScreen extends StatefulWidget {
 
 class _PassengerDashboardScreenState extends State<PassengerDashboardScreen> {
   int _currentIndex = 0;
-  final HomeViewModel _homeVM = HomeViewModel();
-  final WalletViewModel _walletVM = WalletViewModel();
-
-  @override
-  void initState() {
-    super.initState();
-    _homeVM.loadProfile();
-    _walletVM.loadWallet();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,9 +63,9 @@ class _PassengerDashboardScreenState extends State<PassengerDashboardScreen> {
                 key: ValueKey(_currentIndex),
                 index: _currentIndex,
                 children: [
-                  HomeTab(viewModel: _homeVM, walletVM: _walletVM, onWalletTap: () => setState(() => _currentIndex = 1)),
-                  WalletTab(viewModel: _walletVM),
-                  ProfileTab(homeVM: _homeVM),
+                  HomeTab(onWalletTap: () => setState(() => _currentIndex = 1)),
+                  const WalletTab(),
+                  const ProfileTab(),
                 ],
               ),
             ),
