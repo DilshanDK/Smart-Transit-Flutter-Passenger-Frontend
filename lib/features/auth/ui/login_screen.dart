@@ -1,11 +1,15 @@
+// ignore_for_file: use_build_context_synchronously, await_only_futures
+
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import '../data/repositories/auth_repository.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,6 +39,30 @@ class _LoginScreenState extends State<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         ),
+      );
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return; // User canceled
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken != null) {
+        final authRepo = AuthRepository();
+        await authRepo.googleLogin(idToken);
+        if (!mounted) return;
+        // After successful token exchange, trigger app reload or navigate to home
+        Navigator.of(context).pushReplacementNamed('/home'); // Adjust based on your routing
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Sign-In failed. Please try again.')),
       );
     }
   }
@@ -517,7 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
       width: double.infinity,
       height: 52,
       child: OutlinedButton.icon(
-        onPressed: () {},
+        onPressed: _handleGoogleSignIn,
         icon: const Icon(Icons.g_mobiledata_rounded, size: 26),
         label: Text(
           label,
