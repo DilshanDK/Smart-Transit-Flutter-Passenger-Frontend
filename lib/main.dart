@@ -14,13 +14,29 @@ import 'features/payment/data/repositories/payment_repository.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 
+Future<void> _initAppServices() async {
+  try {
+    await dotenv.load(fileName: '.env');
+    debugPrint('🚀 dotenv loaded successfully');
+  } catch (e) {
+    debugPrint('⚠️ Failed to load .env: $e');
+  }
+
+  try {
+    final key = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? 'pk_test_51TZ6vJ8PKebNGkX2IP8gkHL0vkzjo3yvf0MEUHPMmx1yOWGzdOdRnIrezjKUGCz6aWqpzDwiNCSrhfH3gC3H6a1p00VhqzR3oK';
+    debugPrint('🔑 Stripe Key Loaded (length: ${key.length}): ${key.length > 15 ? key.substring(0, 15) : key}...');
+    Stripe.publishableKey = key;
+    await Stripe.instance.applySettings();
+    debugPrint('✅ Stripe initialized successfully');
+  } catch (e) {
+    debugPrint('❌ Stripe initialization failed: $e');
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await dotenv.load(fileName: '.env');
-  Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
-  Stripe.merchantIdentifier = 'smart-transit';
-  await Stripe.instance.applySettings();
+  await _initAppServices();
   runApp(const MyApp());
 }
 

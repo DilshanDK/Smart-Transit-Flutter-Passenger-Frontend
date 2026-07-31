@@ -23,6 +23,11 @@ class RegisterRequested extends AuthEvent {
   });
 }
 
+class GoogleLoginRequested extends AuthEvent {
+  final String idToken;
+  const GoogleLoginRequested(this.idToken);
+}
+
 class LogoutRequested extends AuthEvent {
   const LogoutRequested();
 }

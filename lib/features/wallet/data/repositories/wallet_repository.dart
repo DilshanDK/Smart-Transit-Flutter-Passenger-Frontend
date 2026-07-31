@@ -1,16 +1,60 @@
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/models/models.dart';
+import 'dart:async';
+import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../../../../core/storage/secure_storage.dart';
 
 class WalletRepository {
   final ApiClient _apiClient = ApiClient();
+  io.Socket? _socket;
+  final _balanceUpdateController = StreamController<double>.broadcast();
+
+  Stream<double> get balanceUpdates => _balanceUpdateController.stream;
+
+  Future<void> connectNotifications() async {
+    final token = await SecureStorage.getAccessToken();
+    if (token == null) return;
+
+    _socket?.disconnect();
+    _socket?.dispose();
+
+    _socket = io.io(
+      '${ApiClient.baseUrl}/notifications',
+      io.OptionBuilder()
+          .setTransports(['websocket'])
+          .setAuth({'token': token})
+          .build(),
+    );
+
+    _socket?.on('wallet_updated', (data) {
+      if (data != null && data['balance'] != null) {
+        final newBalance = (data['balance'] as num).toDouble();
+        _balanceUpdateController.add(newBalance);
+      }
+    });
+  }
+
+  void dispose() {
+    _socket?.disconnect();
+    _socket?.dispose();
+    _balanceUpdateController.close();
+  }
 
   Future<double> getBalance() async {
     try {
       final response = await _apiClient.dio.get('/auth/me');
       if (response.statusCode == 200) {
         final userJson = response.data['user'] ?? response.data;
-        return (userJson['walletBalance'] ?? 0).toDouble();
+        final rawBalance = userJson['walletBalance'];
+        
+        if (rawBalance == null) return 0.0;
+        if (rawBalance is num) return rawBalance.toDouble();
+        if (rawBalance is String) return double.tryParse(rawBalance) ?? 0.0;
+        if (rawBalance is Map && rawBalance.containsKey(r'$numberDecimal')) {
+          return double.tryParse(rawBalance[r'$numberDecimal'].toString()) ?? 0.0;
+        }
+        return 0.0;
       }
       throw Exception('Failed to get balance');
     } on DioException catch (e) {

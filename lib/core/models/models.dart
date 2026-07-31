@@ -1,5 +1,15 @@
 // Core data models shared across the app
 
+double _parseDecimal(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? 0.0;
+  if (value is Map && value.containsKey(r'$numberDecimal')) {
+    return double.tryParse(value[r'$numberDecimal'].toString()) ?? 0.0;
+  }
+  return 0.0;
+}
+
 class PassengerProfile {
   final String id;
   final String fullName;
@@ -22,7 +32,7 @@ class PassengerProfile {
       id: json['_id'] ?? json['id'] ?? '',
       fullName: json['fullName'] ?? 'Passenger',
       email: json['email'] ?? '',
-      walletBalance: (json['walletBalance'] ?? 0).toDouble(),
+      walletBalance: _parseDecimal(json['walletBalance']),
       nfcUid: json['nfcUid'],
       role: json['role'] ?? 'passenger',
     );
@@ -60,7 +70,7 @@ class Transaction {
     return Transaction(
       id: json['_id'] ?? '',
       type: json['type'] ?? '',
-      amount: (json['amount'] ?? 0).toDouble(),
+      amount: _parseDecimal(json['amount']),
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       stripePaymentIntentId: json['stripePaymentIntentId'],
     );

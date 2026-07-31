@@ -53,7 +53,7 @@ class AuthRepository {
         throw Exception(response.data['message'] ?? 'Google Login failed');
       }
     } on DioException catch (e) {
-      throw Exception(e.response?.data['message'] ?? 'Google sign-in failed.');
+      throw Exception(e.response?.data?['message'] ?? 'Google sign-in failed.');
     } catch (e) {
       throw Exception('An unexpected error occurred during Google login.');
     }

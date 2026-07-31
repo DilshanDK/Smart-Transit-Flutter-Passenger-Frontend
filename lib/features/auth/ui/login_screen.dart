@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously, await_only_futures
+// ignore_for_file: unused_import, use_build_context_synchronously, await_only_futures
 
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -46,6 +46,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleSignIn() async {
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn();
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       if (googleUser == null) return; // User canceled
 
@@ -53,16 +56,18 @@ class _LoginScreenState extends State<LoginScreen> {
       final idToken = googleAuth.idToken;
 
       if (idToken != null) {
-        final authRepo = AuthRepository();
-        await authRepo.googleLogin(idToken);
         if (!mounted) return;
-        // After successful token exchange, trigger app reload or navigate to home
-        Navigator.of(context).pushReplacementNamed('/home'); // Adjust based on your routing
+        context.read<AuthBloc>().add(GoogleLoginRequested(idToken));
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to retrieve Google ID Token. Check Firebase configuration.')),
+        );
       }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Sign-In failed. Please try again.')),
+        SnackBar(content: Text('Google Sign-In failed: ${error.toString().replaceAll('Exception: ', '')}')),
       );
     }
   }
@@ -76,6 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is AuthError) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),

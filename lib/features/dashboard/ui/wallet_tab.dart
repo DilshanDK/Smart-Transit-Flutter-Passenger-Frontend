@@ -8,6 +8,7 @@ import '../../wallet/bloc/wallet_bloc.dart';
 import '../../wallet/bloc/wallet_event.dart';
 import '../../wallet/bloc/wallet_state.dart';
 import '../../../core/models/models.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 class WalletTab extends StatelessWidget {
   const WalletTab({super.key});
@@ -17,13 +18,7 @@ class WalletTab extends StatelessWidget {
     return BlocListener<WalletBloc, WalletState>(
       listener: (context, state) {
         if (state is PaymentIntentSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Payment Intent created! (Stripe Sheet: Phase 2 wiring)'),
-              backgroundColor: Color(0xFF28A745),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          _presentStripeSheet(context, state.clientSecret);
         } else if (state is WalletError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -179,8 +174,8 @@ class WalletTab extends StatelessWidget {
   }
 
   void _showTopUpSheet(BuildContext context) {
-    final amounts = [100.0, 250.0, 500.0, 1000.0];
-    double selected = 250.0;
+    final amounts = [500.0, 1000.0, 2000.0, 5000.0];
+    double selected = 500.0;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -251,6 +246,39 @@ class WalletTab extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _presentStripeSheet(BuildContext context, String clientSecret) async {
+    try {
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Smart Transit',
+          style: ThemeMode.dark,
+        ),
+      );
+      await Stripe.instance.presentPaymentSheet();
+      
+      // Payment Successful
+      if (context.mounted) {
+         context.read<WalletBloc>().add(const RefreshBalanceRequested());
+         ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('Payment Successful! Wallet updated.'), backgroundColor: Colors.green)
+         );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        if (e is StripeException) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment Canceled: ${e.error.localizedMessage}'), backgroundColor: Colors.orange)
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment Error: $e'), backgroundColor: Colors.red)
+          );
+        }
+      }
+    }
   }
 }
 

@@ -3,14 +3,28 @@ import 'package:smarttransit_flutter_passenger/core/models/models.dart';
 import '../data/repositories/wallet_repository.dart';
 import 'wallet_event.dart';
 import 'wallet_state.dart';
+import 'dart:async';
 
 class WalletBloc extends Bloc<WalletEvent, WalletState> {
   final WalletRepository walletRepository;
+  StreamSubscription? _balanceUpdateSub;
 
   WalletBloc({required this.walletRepository}) : super(const WalletInitial()) {
     on<LoadWalletRequested>(_onLoadWalletRequested);
     on<CreatePaymentIntentRequested>(_onCreatePaymentIntentRequested);
     on<RefreshBalanceRequested>(_onRefreshBalanceRequested);
+
+    walletRepository.connectNotifications();
+    _balanceUpdateSub = walletRepository.balanceUpdates.listen((newBalance) {
+      add(const RefreshBalanceRequested());
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _balanceUpdateSub?.cancel();
+    walletRepository.dispose();
+    return super.close();
   }
 
   Future<void> _onLoadWalletRequested(LoadWalletRequested event, Emitter<WalletState> emit) async {

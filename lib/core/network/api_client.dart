@@ -1,3 +1,5 @@
+// ignore_for_file: unused_import
+
 import 'package:dio/dio.dart';
 import 'dart:io';
 import '../storage/secure_storage.dart';
@@ -5,10 +7,8 @@ import '../storage/secure_storage.dart';
 class ApiClient {
   late final Dio dio;
   
-  // Default to Android Emulator host loopback; falls back to localhost on iOS/Web
-  static final String baseUrl = Platform.isAndroid 
-      ? 'http://10.0.2.2:4000' 
-      : 'http://localhost:4000';
+  // Default to local IP so physical devices on the same WiFi can connect
+  static final String baseUrl = 'http://10.73.59.164:4000';
 
   ApiClient() {
     dio = Dio(BaseOptions(
@@ -27,6 +27,20 @@ class ApiClient {
         return handler.next(options);
       },
       onError: (DioException error, handler) async {
+        // Handle connection errors globally
+        if (error.type == DioExceptionType.connectionTimeout || 
+            error.type == DioExceptionType.connectionError || 
+            error.type == DioExceptionType.receiveTimeout) {
+          final customError = error.copyWith(
+            response: Response(
+              requestOptions: error.requestOptions,
+              data: {'message': 'Backend connection failed. Please ensure your device is on the same WiFi and the server IP is correct.'},
+              statusCode: 503,
+            ),
+          );
+          return handler.next(customError);
+        }
+
         // If error is 401 Unauthorized, try to refresh tokens
         if (error.response?.statusCode == 401) {
           final refreshToken = await SecureStorage.getRefreshToken();
