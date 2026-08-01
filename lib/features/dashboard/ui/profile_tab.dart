@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
+import '../../../core/theme/theme_cubit.dart';
 
 class ProfileTab extends StatelessWidget {
   const ProfileTab({super.key});
@@ -92,6 +93,43 @@ class ProfileTab extends StatelessWidget {
               _SettingsTile(icon: Icons.person_outline_rounded, label: 'Edit Profile', onTap: () {}),
               _SettingsTile(icon: Icons.nfc_rounded, label: 'Linked NFC Card', subtitle: nfcUid ?? 'Not linked', onTap: () {}),
               _SettingsTile(icon: Icons.notifications_outlined, label: 'Notifications', onTap: () {}),
+
+              // ── Theme Toggle Tile ──
+              BlocBuilder<ThemeCubit, bool>(
+                builder: (context, isDark) {
+                  return GestureDetector(
+                    onTap: () => context.read<ThemeCubit>().toggle(),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.06)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                              color: isDark ? const Color(0xFF28A745) : const Color(0xFFFBC02D), size: 20),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              isDark ? 'Dark Mode' : 'Light Mode',
+                              style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                            ),
+                          ),
+                          Switch.adaptive(
+                            value: isDark,
+                            onChanged: (val) => context.read<ThemeCubit>().setDark(val),
+                            activeColor: const Color(0xFF28A745),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+
               _SettingsTile(icon: Icons.lock_outline_rounded, label: 'Change Password', onTap: () => _showChangePasswordDialog(context)),
               _SettingsTile(icon: Icons.help_outline_rounded, label: 'Help & Support', onTap: () {}),
               _SettingsTile(icon: Icons.info_outline_rounded, label: 'About Smart Transit', onTap: () {}),
@@ -99,6 +137,7 @@ class ProfileTab extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(color: Colors.white.withOpacity(0.07)),
               const SizedBox(height: 8),
+
 
               // ── Logout ──
               _SettingsTile(

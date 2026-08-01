@@ -280,7 +280,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 24),
 
                           // Google button
-                          _buildGoogleButton(isDark, label: 'Sign with Google')
+                          _buildGoogleButton(isDark, label: 'Sign in with Google', isLoading: state is AuthLoading)
                               .animate()
                               .fade(delay: 700.ms),
 
@@ -546,25 +546,39 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildGoogleButton(bool isDark, {required String label}) {
+  Widget _buildGoogleButton(bool isDark, {required String label, bool isLoading = false}) {
     return SizedBox(
       width: double.infinity,
       height: 52,
-      child: OutlinedButton.icon(
-        onPressed: _handleGoogleSignIn,
-        icon: const Icon(Icons.g_mobiledata_rounded, size: 26),
-        label: Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
+      child: ElevatedButton(
+        onPressed: isLoading ? null : _handleGoogleSignIn,
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: const Color(0xFFE5E5EA),
+          foregroundColor: const Color(0xFF1F2937),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
         ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: isDark ? Colors.white70 : const Color(0xFF1A1C1F),
-          backgroundColor: isDark ? Colors.transparent : const Color(0xFFF2F2F7),
-          side: BorderSide(
-            color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE2E2E7),
-            width: 1,
-          ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1F2937)),
+                  )
+                : const _GoogleLogo(size: 20),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF374151),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -587,6 +601,80 @@ class _DotPatternPainter extends CustomPainter {
         canvas.drawCircle(Offset(x, y), radius, paint);
       }
     }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Official Google G logo drawn with CustomPainter - multicolor, no network needed
+class _GoogleLogo extends StatelessWidget {
+  final double size;
+  const _GoogleLogo({this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _GoogleLogoPainter()),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double s = size.width;
+    final double cx = s / 2;
+    final double cy = s / 2;
+
+    // Ring thickness is 22% of size; inner radius is what remains
+    final double ringW = s * 0.24;
+    final double outerR = s / 2;
+    final double innerR = outerR - ringW;
+
+    // Use a layer so BlendMode.clear works correctly
+    canvas.saveLayer(Rect.fromLTWH(0, 0, s, s), Paint());
+
+    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: outerR - ringW / 2);
+
+    // Draw full colored arcs (thick strokes)
+    void arc(double startDeg, double sweepDeg, Color color) {
+      canvas.drawArc(
+        rect,
+        startDeg * 3.14159265 / 180.0,
+        sweepDeg * 3.14159265 / 180.0,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = ringW
+          ..strokeCap = StrokeCap.butt,
+      );
+    }
+
+    // Google G color segments (clockwise from top-right):
+    // Red: ~315° → ~90° (counter-clockwise i.e. ~135° sweep backwards)
+    arc(-45, -135, const Color(0xFFEA4335)); // Red (top to left)
+    arc(180, 90, const Color(0xFFFBBC05));   // Yellow (left to bottom)
+    arc(270, 45, const Color(0xFF34A853));   // Green (bottom to bottom-right)
+    arc(315, 90, const Color(0xFF4285F4));   // Blue (bottom-right to top-right)
+
+    // Blue horizontal bar extending from center to right edge
+    canvas.drawRect(
+      Rect.fromLTRB(cx, cy - ringW / 2, cx + outerR, cy + ringW / 2),
+      Paint()..color = const Color(0xFF4285F4)..style = PaintingStyle.fill,
+    );
+
+    // Punch out the inner circle with BlendMode.clear (transparent hole)
+    canvas.drawCircle(
+      Offset(cx, cy),
+      innerR,
+      Paint()..color = const Color(0x00000000)..blendMode = BlendMode.clear,
+    );
+
+    canvas.restore();
   }
 
   @override

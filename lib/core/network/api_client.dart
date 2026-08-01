@@ -8,7 +8,7 @@ class ApiClient {
   late final Dio dio;
   
   // Default to local IP so physical devices on the same WiFi can connect
-  static final String baseUrl = 'http://10.73.59.164:4000';
+  static final String baseUrl = 'http://10.140.137.164:4000';
 
   ApiClient() {
     dio = Dio(BaseOptions(

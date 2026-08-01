@@ -16,6 +16,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   final Widget _loginScreen = const LoginScreen();
+  bool _isFirstCheck = true;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +24,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
+        if (state is! AuthInitial && state is! AuthLoading) {
+          setState(() {
+            _isFirstCheck = false;
+          });
+        }
         if (state is AuthError) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -55,6 +61,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
       builder: (context, state) {
         if (state is AuthAuthenticated) {
           return const PassengerDashboardScreen();
+        }
+
+        if (_isFirstCheck) {
+          return const Scaffold(
+            backgroundColor: Color(0xFF0D0D0D),
+            body: Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF28A745),
+              ),
+            ),
+          );
         }
 
         // Return the persistent LoginScreen so typed inputs are preserved on AuthError

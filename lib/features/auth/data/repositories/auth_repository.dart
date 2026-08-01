@@ -108,8 +108,12 @@ class AuthRepository {
         await PushNotificationService.instance.registerDeviceToken();
         return response.data['user'] as Map<String, dynamic>;
       }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        await SecureStorage.clearTokens();
+      }
     } catch (_) {
-      await SecureStorage.clearTokens();
+      // Keep tokens if it is just a network timeout/offline issue
     }
     return null;
   }

@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PaymentRepository {
-  final Dio _dio = Dio(BaseOptions(baseUrl: dotenv.env['BACKEND_URL'] ?? 'http://10.68.225.164:4000'));
+  final Dio _dio = Dio(BaseOptions(baseUrl: dotenv.env['BACKEND_URL'] ?? 'http://10.140.137.164:4000'));
 
   /// Creates a Stripe Payment Intent on the backend and returns the client secret.
   ///

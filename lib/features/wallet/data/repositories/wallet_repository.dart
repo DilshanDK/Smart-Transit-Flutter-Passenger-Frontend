@@ -29,8 +29,18 @@ class WalletRepository {
 
     _socket?.on('wallet_updated', (data) {
       if (data != null && data['balance'] != null) {
-        final newBalance = (data['balance'] as num).toDouble();
-        _balanceUpdateController.add(newBalance);
+        final rawBalance = data['balance'];
+        double? newBalance;
+        if (rawBalance is num) {
+          newBalance = rawBalance.toDouble();
+        } else if (rawBalance is String) {
+          newBalance = double.tryParse(rawBalance);
+        } else if (rawBalance is Map && rawBalance.containsKey(r'$numberDecimal')) {
+          newBalance = double.tryParse(rawBalance[r'$numberDecimal'].toString());
+        }
+        if (newBalance != null) {
+          _balanceUpdateController.add(newBalance);
+        }
       }
     });
   }
