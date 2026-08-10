@@ -1,3 +1,5 @@
+// ignore_for_file: depend_on_referenced_packages
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,7 +13,8 @@ import 'features/wallet/data/repositories/wallet_repository.dart';
 import 'features/wallet/bloc/wallet_bloc.dart';
 import 'features/wallet/bloc/wallet_event.dart';
 import 'features/payment/data/repositories/payment_repository.dart';
-
+import 'dart:io';
+import 'core/network/api_client.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 
@@ -21,6 +24,19 @@ Future<void> _initAppServices() async {
     debugPrint('🚀 dotenv loaded successfully');
   } catch (e) {
     debugPrint('⚠️ Failed to load .env: $e');
+  }
+
+  // Check backend connectivity
+  try {
+    final url = ApiClient.baseUrl;
+    debugPrint('📡 Checking backend connectivity at: $url');
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
+    final request = await client.getUrl(Uri.parse(url));
+    final response = await request.close();
+    debugPrint('✅ Backend connection successful! Status: ${response.statusCode}');
+  } catch (e) {
+    debugPrint('❌ Backend connection failed: $e');
   }
 
   try {
@@ -43,8 +59,10 @@ Future<void> main() async {
   final themeCubit = ThemeCubit();
   await themeCubit.load();
 
+
   runApp(MyApp(themeCubit: themeCubit));
 }
+
 
 class MyApp extends StatelessWidget {
   final ThemeCubit themeCubit;

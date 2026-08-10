@@ -6,6 +6,9 @@ import '../bloc/auth_bloc.dart';
 import '../bloc/auth_state.dart';
 import 'login_screen.dart';
 import '../../dashboard/ui/passenger_dashboard_screen.dart';
+import '../../wallet/bloc/wallet_bloc.dart';
+import '../../wallet/bloc/wallet_event.dart';
+import '../../wallet/data/repositories/wallet_repository.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -28,6 +31,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
           setState(() {
             _isFirstCheck = false;
           });
+        }
+        if (state is AuthAuthenticated) {
+          context.read<WalletRepository>().connectNotifications();
+          context.read<WalletBloc>().add(const LoadWalletRequested());
+        }
+        if (state is AuthUnauthenticated) {
+          context.read<WalletBloc>().add(const ResetWallet());
         }
         if (state is AuthError) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();

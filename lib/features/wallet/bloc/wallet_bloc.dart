@@ -13,6 +13,7 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     on<LoadWalletRequested>(_onLoadWalletRequested);
     on<CreatePaymentIntentRequested>(_onCreatePaymentIntentRequested);
     on<RefreshBalanceRequested>(_onRefreshBalanceRequested);
+    on<ResetWallet>((event, emit) => emit(const WalletInitial()));
 
     walletRepository.connectNotifications();
     _balanceUpdateSub = walletRepository.balanceUpdates.listen((newBalance) {

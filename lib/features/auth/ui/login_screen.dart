@@ -24,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isGoogleSignInActive = false;
 
   @override
   void dispose() {
@@ -44,13 +45,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleGoogleSignIn() async {
+    setState(() => _isGoogleSignInActive = true);
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn();
       try {
         await googleSignIn.signOut();
       } catch (_) {}
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) return; // User canceled
+      if (googleUser == null) {
+        setState(() => _isGoogleSignInActive = false);
+        return; // User canceled
+      }
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
@@ -59,12 +64,14 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         context.read<AuthBloc>().add(GoogleLoginRequested(idToken));
       } else {
+        setState(() => _isGoogleSignInActive = false);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to retrieve Google ID Token. Check Firebase configuration.')),
         );
       }
     } catch (error) {
+      setState(() => _isGoogleSignInActive = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Google Sign-In failed: ${error.toString().replaceAll('Exception: ', '')}')),
@@ -80,6 +87,9 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
+          if (state is! AuthLoading) {
+            setState(() => _isGoogleSignInActive = false);
+          }
           if (state is AuthError) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -265,11 +275,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           const SizedBox(height: 24),
 
-                          // Sign In button
+                           // Sign In button
                           _buildPrimaryButton(
                             label: 'Sign in',
-                            isLoading: state is AuthLoading,
-                            onPressed: _handleLogin,
+                            isLoading: state is AuthLoading && !_isGoogleSignInActive,
+                            onPressed: state is AuthLoading ? null : _handleLogin,
                           ).animate().fade(delay: 600.ms).slideY(begin: 0.15, end: 0),
 
                           const SizedBox(height: 24),
@@ -280,7 +290,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 24),
 
                           // Google button
-                          _buildGoogleButton(isDark, label: 'Sign in with Google', isLoading: state is AuthLoading)
+                          _buildGoogleButton(
+                            isDark,
+                            label: 'Sign in with Google',
+                            isLoading: state is AuthLoading && _isGoogleSignInActive,
+                            onPressed: state is AuthLoading ? null : _handleGoogleSignIn,
+                          )
                               .animate()
                               .fade(delay: 700.ms),
 
@@ -471,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildPrimaryButton({
     required String label,
     required bool isLoading,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       width: double.infinity,
@@ -546,39 +561,61 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildGoogleButton(bool isDark, {required String label, bool isLoading = false}) {
+  Widget _buildGoogleButton(bool isDark, {required String label, bool isLoading = false, required VoidCallback? onPressed}) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : _handleGoogleSignIn,
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          backgroundColor: const Color(0xFFE5E5EA),
-          foregroundColor: const Color(0xFF1F2937),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1F2937)),
-                  )
-                : const _GoogleLogo(size: 20),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF374151),
-              ),
+      height: 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1F2937) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: isDark 
+                  ? Colors.black.withValues(alpha: 0.25) 
+                  : const Color(0xFFE2E2E7).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
+        ),
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            foregroundColor: isDark ? Colors.white : const Color(0xFF1F2937),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: BorderSide(
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E2E7),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              isLoading
+                  ? SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark ? Colors.white : const Color(0xFF1F2937),
+                      ),
+                    )
+                  : const _GoogleLogo(size: 20),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -607,76 +644,18 @@ class _DotPatternPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Official Google G logo drawn with CustomPainter - multicolor, no network needed
+/// Official Google G logo image asset
 class _GoogleLogo extends StatelessWidget {
   final double size;
   const _GoogleLogo({this.size = 24});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Image.asset(
+      'assets/images/g_icon.png',
       width: size,
       height: size,
-      child: CustomPaint(painter: _GoogleLogoPainter()),
+      fit: BoxFit.contain,
     );
   }
-}
-
-class _GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double s = size.width;
-    final double cx = s / 2;
-    final double cy = s / 2;
-
-    // Ring thickness is 22% of size; inner radius is what remains
-    final double ringW = s * 0.24;
-    final double outerR = s / 2;
-    final double innerR = outerR - ringW;
-
-    // Use a layer so BlendMode.clear works correctly
-    canvas.saveLayer(Rect.fromLTWH(0, 0, s, s), Paint());
-
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: outerR - ringW / 2);
-
-    // Draw full colored arcs (thick strokes)
-    void arc(double startDeg, double sweepDeg, Color color) {
-      canvas.drawArc(
-        rect,
-        startDeg * 3.14159265 / 180.0,
-        sweepDeg * 3.14159265 / 180.0,
-        false,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = ringW
-          ..strokeCap = StrokeCap.butt,
-      );
-    }
-
-    // Google G color segments (clockwise from top-right):
-    // Red: ~315° → ~90° (counter-clockwise i.e. ~135° sweep backwards)
-    arc(-45, -135, const Color(0xFFEA4335)); // Red (top to left)
-    arc(180, 90, const Color(0xFFFBBC05));   // Yellow (left to bottom)
-    arc(270, 45, const Color(0xFF34A853));   // Green (bottom to bottom-right)
-    arc(315, 90, const Color(0xFF4285F4));   // Blue (bottom-right to top-right)
-
-    // Blue horizontal bar extending from center to right edge
-    canvas.drawRect(
-      Rect.fromLTRB(cx, cy - ringW / 2, cx + outerR, cy + ringW / 2),
-      Paint()..color = const Color(0xFF4285F4)..style = PaintingStyle.fill,
-    );
-
-    // Punch out the inner circle with BlendMode.clear (transparent hole)
-    canvas.drawCircle(
-      Offset(cx, cy),
-      innerR,
-      Paint()..color = const Color(0x00000000)..blendMode = BlendMode.clear,
-    );
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

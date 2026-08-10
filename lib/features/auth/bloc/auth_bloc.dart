@@ -12,6 +12,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<RegisterRequested>(_onRegisterRequested);
     on<GoogleLoginRequested>(_onGoogleLoginRequested);
     on<LogoutRequested>(_onLogoutRequested);
+    on<ReloadUserRequested>(_onReloadUserRequested);
   }
 
   Future<void> _onGoogleLoginRequested(GoogleLoginRequested event, Emitter<AuthState> emit) async {
@@ -68,5 +69,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await authRepository.logout();
     } catch (_) {}
     emit(const AuthUnauthenticated());
+  }
+
+  Future<void> _onReloadUserRequested(ReloadUserRequested event, Emitter<AuthState> emit) async {
+    final currentState = state;
+    if (currentState is AuthAuthenticated) {
+      try {
+        final user = await authRepository.checkSession();
+        if (user != null) {
+          emit(AuthAuthenticated(user));
+        }
+      } catch (_) {
+        // Gracefully keep old authentication on refresh network failure
+      }
+    }
   }
 }

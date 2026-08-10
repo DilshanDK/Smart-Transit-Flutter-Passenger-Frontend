@@ -31,3 +31,7 @@ class GoogleLoginRequested extends AuthEvent {
 class LogoutRequested extends AuthEvent {
   const LogoutRequested();
 }
+
+class ReloadUserRequested extends AuthEvent {
+  const ReloadUserRequested();
+}

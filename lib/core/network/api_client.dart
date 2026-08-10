@@ -2,13 +2,24 @@
 
 import 'package:dio/dio.dart';
 import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../storage/secure_storage.dart';
 
 class ApiClient {
   late final Dio dio;
   
   // Default to local IP so physical devices on the same WiFi can connect
-  static final String baseUrl = 'http://10.140.137.164:4000';
+  static final String fallbackBaseUrl = 'http://10.115.205.242:4000';
+
+  static String get baseUrl {
+    try {
+      final envUrl = dotenv.env['BACKEND_URL'];
+      if (envUrl != null && envUrl.isNotEmpty) {
+        return envUrl;
+      }
+    } catch (_) {}
+    return fallbackBaseUrl;
+  }
 
   ApiClient() {
     dio = Dio(BaseOptions(
