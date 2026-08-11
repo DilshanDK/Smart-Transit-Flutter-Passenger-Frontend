@@ -326,7 +326,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _buildPrimaryButton(
                           label: 'Create Account',
                           isLoading: state is AuthLoading,
-                          onPressed: _handleRegister,
+                          onPressed: state is AuthLoading ? null : _handleRegister,
                         ).animate().fade(delay: 700.ms).slideY(begin: 0.15, end: 0),
 
                         const SizedBox(height: 24),
@@ -337,7 +337,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 24),
 
                         // Google button
-                        _buildGoogleButton(isDark, label: 'Sign with Google')
+                        _buildGoogleButton(
+                          isDark,
+                          label: 'Sign in with Google',
+                          isLoading: false, // Google signup not supported directly on this screen
+                          onPressed: state is AuthLoading ? null : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please use the Login page to Sign in with Google.'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                        )
                             .animate()
                             .fade(delay: 800.ms),
 
@@ -520,7 +532,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildPrimaryButton({
     required String label,
     required bool isLoading,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       width: double.infinity,
@@ -595,25 +607,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildGoogleButton(bool isDark, {required String label}) {
+  Widget _buildGoogleButton(bool isDark, {required String label, bool isLoading = false, required VoidCallback? onPressed}) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
-      child: OutlinedButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.g_mobiledata_rounded, size: 26),
-        label: Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
+      height: 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1F2937) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: isDark 
+                  ? Colors.black.withValues(alpha: 0.25) 
+                  : const Color(0xFFE2E2E7).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: isDark ? Colors.white70 : const Color(0xFF1A1C1F),
-          backgroundColor: isDark ? Colors.transparent : const Color(0xFFF2F2F7),
-          side: BorderSide(
-            color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE2E2E7),
-            width: 1,
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            foregroundColor: isDark ? Colors.white : const Color(0xFF1F2937),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: BorderSide(
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E2E7),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              isLoading
+                  ? SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark ? Colors.white : const Color(0xFF1F2937),
+                      ),
+                    )
+                  : const _GoogleLogo(size: 20),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -640,4 +688,20 @@ class _DotPatternPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Official Google G logo image asset
+class _GoogleLogo extends StatelessWidget {
+  final double size;
+  const _GoogleLogo({this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/images/g_icon.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+    );
+  }
 }

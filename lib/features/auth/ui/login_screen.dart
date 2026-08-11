@@ -1,11 +1,15 @@
+// ignore_for_file: unused_import, use_build_context_synchronously, await_only_futures
+
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import '../data/repositories/auth_repository.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isGoogleSignInActive = false;
 
   @override
   void dispose() {
@@ -39,6 +44,41 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isGoogleSignInActive = true);
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isGoogleSignInActive = false);
+        return; // User canceled
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken != null) {
+        if (!mounted) return;
+        context.read<AuthBloc>().add(GoogleLoginRequested(idToken));
+      } else {
+        setState(() => _isGoogleSignInActive = false);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to retrieve Google ID Token. Check Firebase configuration.')),
+        );
+      }
+    } catch (error) {
+      setState(() => _isGoogleSignInActive = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Google Sign-In failed: ${error.toString().replaceAll('Exception: ', '')}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -47,7 +87,11 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
+          if (state is! AuthLoading) {
+            setState(() => _isGoogleSignInActive = false);
+          }
           if (state is AuthError) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
@@ -231,11 +275,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           const SizedBox(height: 24),
 
-                          // Sign In button
+                           // Sign In button
                           _buildPrimaryButton(
                             label: 'Sign in',
-                            isLoading: state is AuthLoading,
-                            onPressed: _handleLogin,
+                            isLoading: state is AuthLoading && !_isGoogleSignInActive,
+                            onPressed: state is AuthLoading ? null : _handleLogin,
                           ).animate().fade(delay: 600.ms).slideY(begin: 0.15, end: 0),
 
                           const SizedBox(height: 24),
@@ -246,7 +290,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 24),
 
                           // Google button
-                          _buildGoogleButton(isDark, label: 'Sign with Google')
+                          _buildGoogleButton(
+                            isDark,
+                            label: 'Sign in with Google',
+                            isLoading: state is AuthLoading && _isGoogleSignInActive,
+                            onPressed: state is AuthLoading ? null : _handleGoogleSignIn,
+                          )
                               .animate()
                               .fade(delay: 700.ms),
 
@@ -437,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildPrimaryButton({
     required String label,
     required bool isLoading,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       width: double.infinity,
@@ -512,25 +561,61 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildGoogleButton(bool isDark, {required String label}) {
+  Widget _buildGoogleButton(bool isDark, {required String label, bool isLoading = false, required VoidCallback? onPressed}) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
-      child: OutlinedButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.g_mobiledata_rounded, size: 26),
-        label: Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
+      height: 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1F2937) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: isDark 
+                  ? Colors.black.withValues(alpha: 0.25) 
+                  : const Color(0xFFE2E2E7).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: isDark ? Colors.white70 : const Color(0xFF1A1C1F),
-          backgroundColor: isDark ? Colors.transparent : const Color(0xFFF2F2F7),
-          side: BorderSide(
-            color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE2E2E7),
-            width: 1,
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            foregroundColor: isDark ? Colors.white : const Color(0xFF1F2937),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: BorderSide(
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E2E7),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              isLoading
+                  ? SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark ? Colors.white : const Color(0xFF1F2937),
+                      ),
+                    )
+                  : const _GoogleLogo(size: 20),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -557,4 +642,20 @@ class _DotPatternPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Official Google G logo image asset
+class _GoogleLogo extends StatelessWidget {
+  final double size;
+  const _GoogleLogo({this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/images/g_icon.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+    );
+  }
 }

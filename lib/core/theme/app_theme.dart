@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Brand Colors
-  static const Color primaryGreen = Color(006000 + 0x00E25); // #006E25 (Bus Green)
+  static const Color primaryGreen = Color(0xFF6366F1); // Aligned Brand Indigo (matching Next.js)
   static const Color onPrimary = Colors.white;
   
   // Light Mode Colors

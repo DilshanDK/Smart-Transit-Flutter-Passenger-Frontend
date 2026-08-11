@@ -1,9 +1,9 @@
 // ignore_for_file: avoid_print
 import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../../../core/network/api_client.dart';
 
 class PaymentRepository {
-  final Dio _dio = Dio(BaseOptions(baseUrl: dotenv.env['BACKEND_URL'] ?? 'http://localhost:3000'));
+  final Dio _dio = Dio(BaseOptions(baseUrl: ApiClient.baseUrl));
 
   /// Creates a Stripe Payment Intent on the backend and returns the client secret.
   ///

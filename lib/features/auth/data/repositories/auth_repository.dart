@@ -34,6 +34,31 @@ class AuthRepository {
     }
   }
 
+  Future<Map<String, dynamic>> googleLogin(String idToken) async {
+    try {
+      final response = await _apiClient.dio.post(
+        '/auth/passenger/google',
+        data: {'idToken': idToken},
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        await SecureStorage.saveTokens(
+          accessToken: data['accessToken'],
+          refreshToken: data['refreshToken'],
+        );
+        await PushNotificationService.instance.registerDeviceToken();
+        return data['user'] as Map<String, dynamic>;
+      } else {
+        throw Exception(response.data['message'] ?? 'Google Login failed');
+      }
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['message'] ?? 'Google sign-in failed.');
+    } catch (e) {
+      throw Exception('An unexpected error occurred during Google login.');
+    }
+  }
+
   Future<Map<String, dynamic>> register(String email, String fullName, String password) async {
     try {
       final response = await _apiClient.dio.post(
@@ -83,9 +108,33 @@ class AuthRepository {
         await PushNotificationService.instance.registerDeviceToken();
         return response.data['user'] as Map<String, dynamic>;
       }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        await SecureStorage.clearTokens();
+      }
     } catch (_) {
-      await SecureStorage.clearTokens();
+      // Keep tokens if it is just a network timeout/offline issue
     }
     return null;
+  }
+
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    try {
+      final response = await _apiClient.dio.patch(
+        '/auth/profile',
+        data: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+        },
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception(response.data['message'] ?? 'Password update failed');
+      }
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['message'] ?? 'Password update failed');
+    } catch (e) {
+      throw Exception('An unexpected error occurred during password update.');
+    }
   }
 }

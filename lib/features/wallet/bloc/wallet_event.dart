@@ -14,3 +14,7 @@ class CreatePaymentIntentRequested extends WalletEvent {
 class RefreshBalanceRequested extends WalletEvent {
   const RefreshBalanceRequested();
 }
+
+class ResetWallet extends WalletEvent {
+  const ResetWallet();
+}

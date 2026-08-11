@@ -8,22 +8,19 @@ import '../../wallet/bloc/wallet_bloc.dart';
 import '../../wallet/bloc/wallet_event.dart';
 import '../../wallet/bloc/wallet_state.dart';
 import '../../../core/models/models.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 class WalletTab extends StatelessWidget {
   const WalletTab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return BlocListener<WalletBloc, WalletState>(
       listener: (context, state) {
         if (state is PaymentIntentSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Payment Intent created! (Stripe Sheet: Phase 2 wiring)'),
-              backgroundColor: Color(0xFF28A745),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          _presentStripeSheet(context, state.clientSecret);
         } else if (state is WalletError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -48,16 +45,28 @@ class WalletTab extends StatelessWidget {
             transactions = state.transactions;
           }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          return RefreshIndicator(
+            onRefresh: () async {
+              final walletBloc = context.read<WalletBloc>();
+              walletBloc.add(LoadWalletRequested());
+              try {
+                await walletBloc.stream.firstWhere(
+                  (s) => s is WalletLoaded || s is WalletError,
+                ).timeout(const Duration(seconds: 5));
+              } catch (_) {}
+            },
+            color: const Color(0xFF28A745),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Header
-                Text('My Wallet', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white))
+                Text('My Wallet', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87))
                     .animate().fade(duration: 500.ms),
                 const SizedBox(height: 4),
-                Text('Manage your balance & transactions', style: GoogleFonts.inter(fontSize: 14, color: Colors.white54))
+                Text('Manage your balance & transactions', style: GoogleFonts.inter(fontSize: 14, color: isDark ? Colors.white54 : Colors.black54))
                     .animate().fade(delay: 100.ms),
                 const SizedBox(height: 24),
 
@@ -138,49 +147,52 @@ class WalletTab extends StatelessWidget {
                 const SizedBox(height: 28),
 
                 // ── Transaction History ──
-                Text('Transaction History', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
+                Text('Transaction History', style: GoogleFonts.inter(color: isDark ? Colors.white70 : Colors.black87, fontSize: 14, fontWeight: FontWeight.w600))
                     .animate(delay: 250.ms).fade(),
                 const SizedBox(height: 14),
 
                 if (isLoader && transactions.isEmpty)
                   const Center(child: CircularProgressIndicator(color: Color(0xFF28A745)))
                 else if (transactions.isEmpty)
-                  _emptyTransactions()
+                  _emptyTransactions(isDark)
                 else
                   ...transactions.asMap().entries.map((e) =>
                       _TransactionCard(tx: e.value).animate(delay: Duration(milliseconds: 300 + e.key * 60)).fade().slideX(begin: 0.05, end: 0)
                   ),
               ],
             ),
-          );
-        },
-      ),
-    );
-  }
+          ),
+        );
+      },
+    ),
+  );
+}
 
-  Widget _emptyTransactions() {
+  Widget _emptyTransactions(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
+        color: isDark ? Colors.white.withOpacity(0.03) : Colors.black.withOpacity(0.02),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        border: Border.all(color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.06)),
       ),
       child: Column(
         children: [
-          const Icon(Icons.receipt_long_outlined, color: Colors.white24, size: 40),
+          Icon(Icons.receipt_long_outlined, color: isDark ? Colors.white24 : Colors.black26, size: 40),
           const SizedBox(height: 12),
-          Text('No transactions yet', style: GoogleFonts.inter(color: Colors.white38, fontSize: 14)),
+          Text('No transactions yet', style: GoogleFonts.inter(color: isDark ? Colors.white38 : Colors.black38, fontSize: 14)),
           const SizedBox(height: 4),
-          Text('Top up your wallet to get started', style: GoogleFonts.inter(color: Colors.white24, fontSize: 12)),
+          Text('Top up your wallet to get started', style: GoogleFonts.inter(color: isDark ? Colors.white24 : Colors.black26, fontSize: 12)),
         ],
       ),
     );
   }
 
   void _showTopUpSheet(BuildContext context) {
-    final amounts = [100.0, 250.0, 500.0, 1000.0];
-    double selected = 250.0;
+    final amounts = [500.0, 1000.0, 2000.0, 5000.0];
+    double selected = 500.0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -193,19 +205,19 @@ class WalletTab extends StatelessWidget {
             child: Container(
               padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
               decoration: BoxDecoration(
-                color: const Color(0xFF111111),
+                color: isDark ? const Color(0xFF111111) : Colors.white,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border.all(color: Colors.white.withOpacity(0.08)),
+                border: Border.all(color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+                  Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.black26, borderRadius: BorderRadius.circular(2)))),
                   const SizedBox(height: 20),
-                  Text('Top Up Wallet', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                  Text('Top Up Wallet', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
                   const SizedBox(height: 6),
-                  Text('Select an amount to add to your wallet', style: GoogleFonts.inter(color: Colors.white54, fontSize: 13)),
+                  Text('Select an amount to add to your wallet', style: GoogleFonts.inter(color: isDark ? Colors.white54 : Colors.black54, fontSize: 13)),
                   const SizedBox(height: 20),
                   Wrap(
                     spacing: 12,
@@ -216,12 +228,14 @@ class WalletTab extends StatelessWidget {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         decoration: BoxDecoration(
-                          color: selected == a ? const Color(0xFF28A745).withOpacity(0.15) : Colors.white.withOpacity(0.05),
+                          color: selected == a
+                              ? const Color(0xFF28A745).withOpacity(0.15)
+                              : (isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03)),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: selected == a ? const Color(0xFF28A745) : Colors.white.withOpacity(0.1)),
+                          border: Border.all(color: selected == a ? const Color(0xFF28A745) : (isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.06))),
                         ),
                         child: Text('LKR ${a.toInt()}', style: GoogleFonts.inter(
-                          color: selected == a ? const Color(0xFF28A745) : Colors.white70,
+                          color: selected == a ? const Color(0xFF28A745) : (isDark ? Colors.white70 : Colors.black87),
                           fontWeight: selected == a ? FontWeight.bold : FontWeight.normal,
                           fontSize: 14,
                         )),
@@ -252,6 +266,40 @@ class WalletTab extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _presentStripeSheet(BuildContext context, String clientSecret) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    try {
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Smart Transit',
+          style: isDark ? ThemeMode.dark : ThemeMode.light,
+        ),
+      );
+      await Stripe.instance.presentPaymentSheet();
+
+      // Payment Successful
+      if (context.mounted) {
+         context.read<WalletBloc>().add(const RefreshBalanceRequested());
+         ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('Payment Successful! Wallet updated.'), backgroundColor: Colors.green)
+         );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        if (e is StripeException) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment Canceled: ${e.error.localizedMessage}'), backgroundColor: Colors.orange)
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment Error: $e'), backgroundColor: Colors.red)
+          );
+        }
+      }
+    }
+  }
 }
 
 class _TransactionCard extends StatelessWidget {
@@ -260,14 +308,15 @@ class _TransactionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isTopUp = tx.isTopUp;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        border: Border.all(color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.06)),
       ),
       child: Row(
         children: [
@@ -289,11 +338,11 @@ class _TransactionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(isTopUp ? 'Wallet Top Up' : 'Journey Deduction',
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    style: GoogleFonts.inter(color: isDark ? Colors.white : Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 3),
                 Text(
                   '${tx.createdAt.day}/${tx.createdAt.month}/${tx.createdAt.year}',
-                  style: GoogleFonts.inter(color: Colors.white38, fontSize: 11),
+                  style: GoogleFonts.inter(color: isDark ? Colors.white38 : Colors.black38, fontSize: 11),
                 ),
               ],
             ),

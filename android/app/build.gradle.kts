@@ -1,3 +1,19 @@
+import java.util.Properties
+
+// Load secrets from .env (gitignored — never committed to source control)
+val envProperties = Properties().apply {
+    val envFile = rootProject.file("../.env")
+    if (envFile.exists()) {
+        envFile.forEachLine { line ->
+            val trimmed = line.trim()
+            if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && trimmed.contains("=")) {
+                val (key, value) = trimmed.split("=", limit = 2)
+                setProperty(key.trim(), value.trim())
+            }
+        }
+    }
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -29,6 +45,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Inject Google Maps API key from .env into AndroidManifest.xml
+        manifestPlaceholders["MAPS_API_KEY"] =
+            envProperties.getProperty("GOOGLE_MAPS_API_KEY") ?: ""
     }
 
     buildTypes {

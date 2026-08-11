@@ -1,22 +1,26 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: unused_import, deprecated_member_use
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
 import '../../wallet/bloc/wallet_bloc.dart';
+import '../../wallet/bloc/wallet_event.dart';
 import '../../wallet/bloc/wallet_state.dart';
 import '../../ticket/ui/qr_ticket_screen.dart';
 import '../../tracking/ui/tracking_screen.dart';
 
 class HomeTab extends StatelessWidget {
   final VoidCallback onWalletTap;
+  final VoidCallback onTrackTap;
 
   const HomeTab({
     super.key,
     required this.onWalletTap,
+    required this.onTrackTap,
   });
 
   String _getGreeting() {
@@ -37,6 +41,8 @@ class HomeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, authState) {
         String name = 'Passenger';
@@ -61,9 +67,25 @@ class HomeTab extends StatelessWidget {
               balance = walletState.balance;
             }
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-              child: Column(
+            return RefreshIndicator(
+              onRefresh: () async {
+                final walletBloc = context.read<WalletBloc>();
+                walletBloc.add(LoadWalletRequested());
+                
+                final authBloc = context.read<AuthBloc>();
+                authBloc.add(ReloadUserRequested());
+
+                try {
+                  await walletBloc.stream.firstWhere(
+                    (s) => s is WalletLoaded || s is WalletError,
+                  ).timeout(const Duration(seconds: 5));
+                } catch (_) {}
+              },
+              color: const Color(0xFF28A745),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ── Header ──
@@ -75,11 +97,11 @@ class HomeTab extends StatelessWidget {
                         children: [
                           Text(
                             greeting,
-                            style: GoogleFonts.inter(fontSize: 14, color: Colors.white54),
+                            style: GoogleFonts.inter(fontSize: 14, color: isDark ? Colors.white54 : Colors.black54),
                           ),
                           Text(
                             name,
-                            style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
                           ),
                         ],
                       ),
@@ -148,7 +170,7 @@ class HomeTab extends StatelessWidget {
                   const SizedBox(height: 24),
 
                   // ── Quick Actions ──
-                  Text('Quick Actions', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))
+                  Text('Quick Actions', style: GoogleFonts.inter(color: isDark ? Colors.white70 : Colors.black87, fontSize: 14, fontWeight: FontWeight.w600))
                       .animate(delay: 150.ms).fade(),
                   const SizedBox(height: 14),
                   Row(
@@ -173,12 +195,7 @@ class HomeTab extends StatelessWidget {
                         icon: Icons.map_outlined,
                         label: 'Track',
                         color: const Color(0xFFFF9800),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const TrackingScreen()),
-                          );
-                        },
+                        onTap: onTrackTap,
                       ),
                     ],
                   ).animate(delay: 200.ms).fade(),
@@ -189,13 +206,13 @@ class HomeTab extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Recent Journeys', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                      Text('Recent Journeys', style: GoogleFonts.inter(color: isDark ? Colors.white70 : Colors.black87, fontSize: 14, fontWeight: FontWeight.w600)),
                       Text('See All', style: GoogleFonts.inter(color: const Color(0xFF28A745), fontSize: 13)),
                     ],
                   ).animate(delay: 250.ms).fade(),
                   const SizedBox(height: 14),
 
-                  // Journey Cards (placeholder until Phase 3)
+                  // Journey Cards
                   ...[
                     const _JourneyCard(from: 'Colombo Fort', to: 'Nugegoda', fare: 'LKR 45.00', date: 'Today, 8:20 AM', status: 'Completed'),
                     const _JourneyCard(from: 'Maharagama', to: 'Colombo Fort', fare: 'LKR 60.00', date: 'Yesterday, 6:45 PM', status: 'Completed'),
@@ -203,9 +220,10 @@ class HomeTab extends StatelessWidget {
                   ].asMap().entries.map((e) => e.value.animate(delay: Duration(milliseconds: 300 + e.key * 80)).fade().slideY(begin: 0.1, end: 0)),
                 ],
               ),
-            );
-          },
-        );
+            ),
+          );
+        },
+      );
       },
     );
   }
@@ -221,6 +239,7 @@ class _QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -235,7 +254,7 @@ class _QuickAction extends StatelessWidget {
             children: [
               Icon(icon, color: color, size: 22),
               const SizedBox(height: 6),
-              Text(label, style: GoogleFonts.inter(color: Colors.white70, fontSize: 11), textAlign: TextAlign.center),
+              Text(label, style: GoogleFonts.inter(color: isDark ? Colors.white70 : Colors.black87, fontSize: 11), textAlign: TextAlign.center),
             ],
           ),
         ),
@@ -255,13 +274,14 @@ class _JourneyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06)),
       ),
       child: Row(
         children: [
@@ -277,16 +297,16 @@ class _JourneyCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(from, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: Icon(Icons.arrow_forward_rounded, color: Colors.white38, size: 14),
+                    Text(from, style: GoogleFonts.inter(color: isDark ? Colors.white : Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(Icons.arrow_forward_rounded, color: isDark ? Colors.white38 : Colors.black38, size: 14),
                     ),
-                    Text(to, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text(to, style: GoogleFonts.inter(color: isDark ? Colors.white : Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(date, style: GoogleFonts.inter(color: Colors.white38, fontSize: 11)),
+                Text(date, style: GoogleFonts.inter(color: isDark ? Colors.white38 : Colors.black38, fontSize: 11)),
               ],
             ),
           ),
@@ -295,7 +315,7 @@ class _JourneyCard extends StatelessWidget {
             children: [
               Text(fare, style: GoogleFonts.inter(color: const Color(0xFF28A745), fontSize: 13, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(status, style: GoogleFonts.inter(color: Colors.white38, fontSize: 10)),
+              Text(status, style: GoogleFonts.inter(color: isDark ? Colors.white38 : Colors.black38, fontSize: 10)),
             ],
           ),
         ],
