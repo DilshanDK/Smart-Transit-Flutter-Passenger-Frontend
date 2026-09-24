@@ -1,18 +1,47 @@
 // ignore_for_file: unused_import, deprecated_member_use
 
-import 'dart:math' as math;
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_map/flutter_map.dart' as fm;
-import 'package:latlong2/latlong.dart' as ll;
+import '../../../../core/network/api_client.dart';
 import '../data/repositories/tracking_repository.dart';
 import '../bloc/tracking_bloc.dart';
 import '../bloc/tracking_event.dart';
 import '../bloc/tracking_state.dart';
+
+class _RouteStopData {
+  final String name;
+  final double distanceFromStart;
+  final LatLng latLng;
+
+  const _RouteStopData({
+    required this.name,
+    required this.distanceFromStart,
+    required this.latLng,
+  });
+}
+
+const List<LatLng> _fallback593Polyline = [
+  LatLng(7.2906, 80.6337), // Kandy
+  LatLng(7.3248, 80.6225), // Katugastota
+  LatLng(7.3686, 80.6186), // Akurana
+  LatLng(7.4111, 80.6033), // Alawathugoda
+  LatLng(7.4475, 80.6094), // Alwala (Elwala)
+  LatLng(7.4675, 80.6234), // Matale
+];
+
+const List<_RouteStopData> _fallback593Stops = [
+  _RouteStopData(name: 'Kandy', distanceFromStart: 0.0, latLng: LatLng(7.2906, 80.6337)),
+  _RouteStopData(name: 'Katugastota', distanceFromStart: 4.0, latLng: LatLng(7.3248, 80.6225)),
+  _RouteStopData(name: 'Akurana', distanceFromStart: 10.9, latLng: LatLng(7.3686, 80.6186)),
+  _RouteStopData(name: 'Alawathugoda', distanceFromStart: 16.5, latLng: LatLng(7.4111, 80.6033)),
+  _RouteStopData(name: 'Alwala (Elwala)', distanceFromStart: 21.7, latLng: LatLng(7.4475, 80.6094)),
+  _RouteStopData(name: 'Matale', distanceFromStart: 25.7, latLng: LatLng(7.4675, 80.6234)),
+];
 
 class TrackingScreen extends StatefulWidget {
   final bool showBackButton;
@@ -30,12 +59,17 @@ class TrackingScreen extends StatefulWidget {
 class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStateMixin {
   final TextEditingController _routeController = TextEditingController(text: '593');
   GoogleMapController? _mapController;
-  fm.MapController? _osmMapController;
-  BitmapDescriptor? _busIcon;
+  BitmapDescriptor? _busBadgeIcon;
+  BitmapDescriptor? _busArrowIcon;
+  BitmapDescriptor? _stopIcon;
+  List<LatLng> _routePolyline = [];
+  List<_RouteStopData> _routeStops = [];
   LatLng? _userLatLng;
   StreamSubscription<Position>? _positionStreamSubscription;
-  bool _useOpenStreetMap = false;
-  bool _isMapLockedToUser = true;
+  bool _isMapLockedToUser = false;
+  bool _isMapLockedToBus = true; // Auto-focus bus by default
+  bool _hasInitialBusFocusDone = false;
+  int _lastCameraFollowMs = 0;
   late final TrackingBloc _trackingBloc;
 
   // Stores active animation controllers and animated coordinates for each bus
@@ -44,26 +78,21 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
   @override
   void initState() {
     super.initState();
-    _osmMapController = fm.MapController();
     _trackingBloc = TrackingBloc(
       trackingRepository: TrackingRepository(),
     );
-    _loadMarkerIcon();
+    _loadMarkerIcons();
     _requestLocationPermission();
+    _fetchRouteData(_routeController.text);
+    // Auto-connect telemetry for Route 593
+    _trackingBloc.add(StartTrackingRequested(_routeController.text));
   }
 
   void _centerMapOnUser() {
     if (_userLatLng == null) return;
-    if (_useOpenStreetMap) {
-      _osmMapController?.move(
-        ll.LatLng(_userLatLng!.latitude, _userLatLng!.longitude),
-        15,
-      );
-    } else {
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(_userLatLng!, 15),
-      );
-    }
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_userLatLng!, 15),
+    );
   }
 
   Future<void> _requestLocationPermission() async {
@@ -111,18 +140,222 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
     }
   }
 
-  Future<void> _loadMarkerIcon() async {
+  /// Fetches route corridor path & stops from backend API
+  Future<void> _fetchRouteData(String routeId) async {
+    final cleanId = routeId.trim().toUpperCase();
     try {
-      // Larger icon (72×72) for premium Uber-style visibility
-      final icon = await BitmapDescriptor.fromAssetImage(
-        const ImageConfiguration(size: Size(72, 72)),
-        'assets/images/bus_circular.png',
-      );
-      setState(() {
-        _busIcon = icon;
-      });
+      final response = await ApiClient().dio.get('/routes/$cleanId');
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data;
+        final List<LatLng> polyline = [];
+        final List<_RouteStopData> stops = [];
+
+        // Parse polyline path coordinates [[lng, lat], ...]
+        if (data['path'] != null && data['path']['coordinates'] is List) {
+          final coords = data['path']['coordinates'] as List;
+          for (final c in coords) {
+            if (c is List && c.length >= 2) {
+              final lng = (c[0] as num).toDouble();
+              final lat = (c[1] as num).toDouble();
+              polyline.add(LatLng(lat, lng));
+            }
+          }
+        }
+
+        // Parse transit stops
+        if (data['stops'] is List) {
+          final rawStops = data['stops'] as List;
+          for (final s in rawStops) {
+            if (s is Map && s['location'] != null && s['location']['coordinates'] is List) {
+              final coords = s['location']['coordinates'] as List;
+              final lng = (coords[0] as num).toDouble();
+              final lat = (coords[1] as num).toDouble();
+              final name = s['name']?.toString() ?? 'Stop';
+              final dist = (s['distanceFromStart'] as num?)?.toDouble() ?? 0.0;
+              stops.add(_RouteStopData(
+                name: name,
+                distanceFromStart: dist,
+                latLng: LatLng(lat, lng),
+              ));
+            }
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _routePolyline = polyline.isNotEmpty ? polyline : (cleanId == '593' ? _fallback593Polyline : []);
+            _routeStops = stops.isNotEmpty ? stops : (cleanId == '593' ? _fallback593Stops : []);
+          });
+        }
+        return;
+      }
     } catch (e) {
-      debugPrint('⚠️ Error loading custom bus icon: $e');
+      debugPrint('⚠️ Error fetching route corridor: $e');
+    }
+
+    if (mounted && cleanId == '593' && _routePolyline.isEmpty) {
+      setState(() {
+        _routePolyline = _fallback593Polyline;
+        _routeStops = _fallback593Stops;
+      });
+    }
+  }
+
+  /// Focuses map camera on the leading bus
+  void _focusOnBus({bool forceZoom = true}) {
+    if (_busAnimations.isEmpty) return;
+    final first = _busAnimations.values.first;
+    final target = first.currentLatLng;
+
+    setState(() {
+      _isMapLockedToBus = true;
+      _isMapLockedToUser = false;
+    });
+
+    _mapController?.animateCamera(
+      forceZoom
+          ? CameraUpdate.newLatLngZoom(target, 15.0)
+          : CameraUpdate.newLatLng(target),
+    );
+  }
+
+  /// Generates red stop pin icon
+  Future<BitmapDescriptor> _createStopIcon() async {
+    const double size = 48.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(const Offset(size / 2, size / 2 + 2), 12, shadowPaint);
+
+    final fillPaint = Paint()..color = const Color(0xFFEF4444);
+    canvas.drawCircle(const Offset(size / 2, size / 2), 12, fillPaint);
+
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(const Offset(size / 2, size / 2), 12, borderPaint);
+
+    final innerDot = Paint()..color = Colors.white;
+    canvas.drawCircle(const Offset(size / 2, size / 2), 4, innerDot);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = byteData!.buffer.asUint8List();
+    return BitmapDescriptor.fromBytes(bytes, size: const Size(24, 24));
+  }
+
+  /// Loads custom marker bitmaps:
+  /// 1. `_busBadgeIcon`: Upright circular emerald badge with bus icon (NEVER ROTATES)
+  /// 2. `_busArrowIcon`: Directional arrow header that rotates with bus heading
+  /// 3. `_stopIcon`: Transit stop pin
+  Future<void> _loadMarkerIcons() async {
+    try {
+      const double size = 110.0;
+      const double cx = size / 2; // 55.0
+      const double cy = size / 2; // 55.0
+      const double badgeRadius = 26.0;
+
+      // ── 1. Bus Badge Icon (ALWAYS UPRIGHT, NEVER ROTATED) ──
+      {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+
+        // Subtle glow drop shadow
+        final shadowPaint = Paint()
+          ..color = const Color(0x6610B981)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        canvas.drawCircle(const Offset(cx, cy + 3), badgeRadius + 2, shadowPaint);
+
+        // Emerald radial gradient (#10B981 -> #059669)
+        final gradient = ui.Gradient.radial(
+          const Offset(cx - 6, cy - 6),
+          badgeRadius * 1.5,
+          [const Color(0xFF10B981), const Color(0xFF059669)],
+        );
+        canvas.drawCircle(const Offset(cx, cy), badgeRadius, Paint()..shader = gradient);
+
+        // White border
+        canvas.drawCircle(
+          const Offset(cx, cy),
+          badgeRadius,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5,
+        );
+
+        // White bus icon centered
+        final iconPainter = TextPainter(textDirection: ui.TextDirection.ltr)
+          ..text = TextSpan(
+            text: String.fromCharCode(Icons.directions_bus_rounded.codePoint),
+            style: TextStyle(
+              fontSize: 28,
+              fontFamily: Icons.directions_bus_rounded.fontFamily,
+              color: Colors.white,
+            ),
+          )
+          ..layout();
+        iconPainter.paint(
+          canvas,
+          Offset(cx - iconPainter.width / 2, cy - iconPainter.height / 2),
+        );
+
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(size.toInt(), size.toInt());
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          _busBadgeIcon = BitmapDescriptor.fromBytes(
+            byteData.buffer.asUint8List(),
+            size: const Size(55, 55),
+          );
+        }
+      }
+
+      // ── 2. Heading Arrow Icon (ROTATES VIA GOOGLE MAPS rotation:) ──
+      {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+
+        // Arrow pointing North (heading 0°). Center of rotation is (cx, cy) = (55, 55).
+        final arrowPath = Path()
+          ..moveTo(cx, 13)                  // tip
+          ..lineTo(cx + 6.5, 27)             // bottom-right
+          ..lineTo(cx, 22.5)                 // inner notch
+          ..lineTo(cx - 6.5, 27)             // bottom-left
+          ..close();
+
+        final arrowFill = Paint()..color = const Color(0xFF22C55E);
+        final arrowStroke = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..strokeJoin = StrokeJoin.round;
+
+        canvas.drawPath(arrowPath, arrowFill);
+        canvas.drawPath(arrowPath, arrowStroke);
+
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(size.toInt(), size.toInt());
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          _busArrowIcon = BitmapDescriptor.fromBytes(
+            byteData.buffer.asUint8List(),
+            size: const Size(55, 55),
+          );
+        }
+      }
+
+      // ── 3. Stop Pin Icon ──
+      _stopIcon = await _createStopIcon();
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('⚠️ Error generating marker icons: $e');
     }
   }
 
@@ -186,6 +419,15 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
             // Interpolate heading
             helper.currentHeading = helper.previousHeading + (helper.targetHeading - helper.previousHeading) * t;
           });
+
+          // Auto-lock camera to bus when in bus-follow mode (throttled to 1s to prevent frame skips)
+          if (_isMapLockedToBus && _busAnimations.isNotEmpty) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - _lastCameraFollowMs > 1000) {
+              _lastCameraFollowMs = now;
+              _focusOnBus(forceZoom: false);
+            }
+          }
         });
 
         _busAnimations[id] = helper;
@@ -200,6 +442,14 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
           helper.controller.forward(from: 0.0);
         }
       }
+    }
+
+    // Initial zoom-in to bus location on first telemetry arrival
+    if (_isMapLockedToBus && buses.isNotEmpty && !_hasInitialBusFocusDone) {
+      _hasInitialBusFocusDone = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focusOnBus(forceZoom: true);
+      });
     }
   }
 
@@ -270,26 +520,68 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
               final buses = state.buses.values.toList();
 
               // Map animators to active Marker instances
-              final markers = _busAnimations.entries.map((entry) {
+              final markers = <Marker>{};
+
+              // 1. Live Bus Markers (Upright Badge + Rotating Arrow Header)
+              for (final entry in _busAnimations.entries) {
                 final id = entry.key;
                 final helper = entry.value;
-                
                 final bus = state.buses[id];
-                final busNumber = bus?.busNumber ?? 'Bus';
+                final busNumber = bus?.busNumber ?? 'WP-GA-9021';
 
-                return Marker(
-                  markerId: MarkerId(id),
-                  position: helper.currentLatLng,
-                  rotation: helper.currentHeading,
-                  icon: _busIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-                  anchor: const Offset(0.5, 0.5),
-                  zIndex: 2,
-                  infoWindow: InfoWindow(
-                    title: '🚌 $busNumber',
-                    snippet: 'Route ${bus?.routeId ?? state.routeId} • ${(bus?.speed ?? 0).toStringAsFixed(0)} km/h',
+                // Upright Bus Badge (NEVER ROTATED, stays straight up)
+                markers.add(
+                  Marker(
+                    markerId: MarkerId('${id}_badge'),
+                    position: helper.currentLatLng,
+                    rotation: 0.0, // Stays upright at all times
+                    flat: false,
+                    anchor: const Offset(0.5, 0.5),
+                    icon: _busBadgeIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                    zIndex: 4,
+                    consumeTapEvents: true,
+                    infoWindow: InfoWindow(
+                      title: '🚌 $busNumber • ${(bus?.speed ?? 0).toStringAsFixed(0)} km/h',
+                      snippet: 'Route ${bus?.routeId ?? state.routeId} — tap to lock camera',
+                      onTap: () {
+                        _focusOnBus(forceZoom: true);
+                      },
+                    ),
                   ),
                 );
-              }).toSet();
+
+                // Rotating Heading Arrow (Only this arrow rotates to follow vehicle heading)
+                if (_busArrowIcon != null) {
+                  markers.add(
+                    Marker(
+                      markerId: MarkerId('${id}_arrow'),
+                      position: helper.currentLatLng,
+                      rotation: helper.currentHeading, // Only the arrow rotates!
+                      flat: true,
+                      anchor: const Offset(0.5, 0.5),
+                      icon: _busArrowIcon!,
+                      zIndex: 5,
+                    ),
+                  );
+                }
+              }
+
+              // 2. Transit Stop Markers
+              for (final stop in _routeStops) {
+                markers.add(
+                  Marker(
+                    markerId: MarkerId('stop_${stop.name}'),
+                    position: stop.latLng,
+                    icon: _stopIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                    anchor: const Offset(0.5, 0.5),
+                    zIndex: 2,
+                    infoWindow: InfoWindow(
+                      title: '🚏 ${stop.name}',
+                      snippet: '${stop.distanceFromStart.toStringAsFixed(1)} km from start',
+                    ),
+                  ),
+                );
+              }
 
               // Pulsing green ring circles for each live bus (Uber-style glow)
               final busCircles = _busAnimations.entries.expand((entry) {
@@ -355,9 +647,17 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
                               onPressed: state.isConnecting
                                   ? null
                                   : () {
+                                      final routeId = _routeController.text.trim();
                                       context.read<TrackingBloc>().add(
-                                            StartTrackingRequested(_routeController.text),
+                                            StartTrackingRequested(routeId),
                                           );
+                                      _fetchRouteData(routeId);
+                                      setState(() {
+                                        _hasInitialBusFocusDone = false;
+                                        _isMapLockedToBus = true;
+                                        _isMapLockedToUser = false;
+                                      });
+                                      _focusOnBus(forceZoom: true);
                                     },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF28A745),
@@ -388,164 +688,86 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
                             ),
                           ),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _useOpenStreetMap ? '🗺️ OpenStreetMap Active' : '📍 Google Maps Active',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: isDark ? Colors.white60 : Colors.black54,
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _useOpenStreetMap = !_useOpenStreetMap;
-                                });
-                              },
-                              icon: Icon(
-                                _useOpenStreetMap ? Icons.map : Icons.public,
-                                size: 14,
-                                color: const Color(0xFF28A745),
-                              ),
-                              label: Text(
-                                _useOpenStreetMap ? 'Use Google Maps' : 'Switch to OpenStreetMap',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF28A745),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                       const SizedBox(height: 4),
                       Expanded(
                         child: widget.isActive
-                            ? (_useOpenStreetMap
-                                ? fm.FlutterMap(
-                                    mapController: _osmMapController,
-                                    options: fm.MapOptions(
-                                      initialCenter: _userLatLng != null
-                                          ? ll.LatLng(_userLatLng!.latitude, _userLatLng!.longitude)
-                                          : const ll.LatLng(6.9271, 79.8612), // Colombo Center
-                                      initialZoom: 13,
-                                      onPositionChanged: (position, hasGesture) {
-                                        if (hasGesture && _isMapLockedToUser) {
+                            ? Stack(
+                                children: [
+                                  IgnorePointer(
+                                    ignoring: _mapController == null,
+                                    child: Listener(
+                                      onPointerDown: (_) {
+                                        // Release map lock on manual user drag
+                                        if (_isMapLockedToUser || _isMapLockedToBus) {
                                           setState(() {
                                             _isMapLockedToUser = false;
+                                            _isMapLockedToBus = false;
                                           });
                                         }
                                       },
-                                    ),
-                                    children: [
-                                      fm.TileLayer(
-                                        urlTemplate: isDark
-                                            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                                            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                                        userAgentPackageName: 'com.smarttransit.passenger',
-                                      ),
-                                      fm.CircleLayer(
-                                        circles: [
+                                      child: GoogleMap(
+                                        onMapCreated: _onMapCreated,
+                                        initialCameraPosition: CameraPosition(
+                                          target: _userLatLng ?? const LatLng(7.4675, 80.6234), // Route 593 Corridor Center
+                                          zoom: 14,
+                                        ),
+                                        polylines: {
+                                          if (_routePolyline.isNotEmpty)
+                                            Polyline(
+                                              polylineId: const PolylineId('route_corridor_polyline'),
+                                              points: _routePolyline,
+                                              color: const Color(0xFF3B82F6),
+                                              width: 5,
+                                              geodesic: true,
+                                              jointType: JointType.round,
+                                              startCap: Cap.roundCap,
+                                              endCap: Cap.roundCap,
+                                            ),
+                                        },
+                                        markers: markers,
+                                        circles: {
                                           if (_userLatLng != null)
-                                            fm.CircleMarker(
-                                              point: ll.LatLng(_userLatLng!.latitude, _userLatLng!.longitude),
+                                            Circle(
+                                              circleId: const CircleId('user_radius'),
+                                              center: _userLatLng!,
                                               radius: 300,
-                                              useRadiusInMeter: true,
-                                              color: const Color(0x22007AFF),
-                                              borderColor: const Color(0x88007AFF),
-                                              borderStrokeWidth: 2,
+                                              fillColor: const Color(0x22007AFF),
+                                              strokeColor: const Color(0x88007AFF),
+                                              strokeWidth: 2,
                                             ),
-                                        ],
+                                          ...busCircles,
+                                        },
+                                        myLocationEnabled: _userLatLng != null,
+                                        myLocationButtonEnabled: false,
+                                        zoomControlsEnabled: false,
                                       ),
-                                      fm.MarkerLayer(
-                                        markers: [
-                                          if (_userLatLng != null)
-                                            fm.Marker(
-                                              point: ll.LatLng(_userLatLng!.latitude, _userLatLng!.longitude),
-                                              width: 60,
-                                              height: 60,
-                                              child: const _PulsingUserLocationDot(),
+                                    ),
+                                  ),
+                                  if (_mapController == null)
+                                    Container(
+                                      color: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const CircularProgressIndicator(
+                                              color: Color(0xFF28A745),
                                             ),
-                                          ..._busAnimations.entries.map((entry) {
-                                            final helper = entry.value;
-                                            return fm.Marker(
-                                              point: ll.LatLng(helper.currentLatLng.latitude, helper.currentLatLng.longitude),
-                                              width: 80,
-                                              height: 80,
-                                              child: _AnimatedBusMarker(
-                                                heading: helper.currentHeading,
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              'Initializing Live Map...',
+                                              style: GoogleFonts.inter(
+                                                color: isDark ? Colors.white70 : Colors.black87,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
                                               ),
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ],
-                                  )
-                                : Stack(
-                                    children: [
-                                      IgnorePointer(
-                                        ignoring: _mapController == null,
-                                        child: GoogleMap(
-                                          onMapCreated: _onMapCreated,
-                                          initialCameraPosition: CameraPosition(
-                                            target: _userLatLng ?? const LatLng(6.9271, 79.8612), // Colombo Center
-                                            zoom: 15,
-                                          ),
-                                          markers: markers,
-                                          circles: {
-                                            if (_userLatLng != null)
-                                              Circle(
-                                                circleId: const CircleId('user_radius'),
-                                                center: _userLatLng!,
-                                                radius: 300,
-                                                fillColor: const Color(0x22007AFF),
-                                                strokeColor: const Color(0x88007AFF),
-                                                strokeWidth: 2,
-                                              ),
-                                            ...busCircles,
-                                          },
-                                          myLocationEnabled: _userLatLng != null,
-                                          myLocationButtonEnabled: false,
-                                          zoomControlsEnabled: false,
-                                          onCameraMoveStarted: () {
-                                            if (_isMapLockedToUser) {
-                                              setState(() {
-                                                _isMapLockedToUser = false;
-                                              });
-                                            }
-                                          },
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      if (_mapController == null)
-                                        Container(
-                                          color: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
-                                          child: Center(
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                const CircularProgressIndicator(
-                                                  color: Color(0xFF28A745),
-                                                ),
-                                                const SizedBox(height: 16),
-                                                Text(
-                                                  'Initializing Live Map...',
-                                                  style: GoogleFonts.inter(
-                                                    color: isDark ? Colors.white70 : Colors.black87,
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ))
+                                    ),
+                                ],
+                              )
                             : Container(
                                 color: isDark ? const Color(0xFF0D0D0D) : const Color(0xFFF9F9FE),
                                 child: const Center(
@@ -583,7 +805,6 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
                               '${buses.length} active buses',
                               style: GoogleFonts.inter(
                                 color: isDark ? Colors.white54 : Colors.black54,
-                                fontSize: 12,
                               ),
                             ),
                           ],
@@ -592,19 +813,29 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
                     ],
                   ),
                   
-                  // Floating action buttons for centering on user and active buses
+                  // Floating action buttons
                   Positioned(
                     bottom: 80,
                     right: 16,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // ── User GPS lock ──
                         if (_userLatLng != null) ...[
                           FloatingActionButton(
                             heroTag: 'btn_center_user',
                             mini: true,
-                            backgroundColor: _isMapLockedToUser ? const Color(0xFF007AFF) : (isDark ? const Color(0xFF333333) : Colors.white),
-                            onPressed: _centerMapOnUser,
+                            backgroundColor: _isMapLockedToUser
+                                ? const Color(0xFF007AFF)
+                                : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
+                            elevation: 4,
+                            onPressed: () {
+                              setState(() {
+                                _isMapLockedToUser = true;
+                                _isMapLockedToBus = false;
+                              });
+                              _centerMapOnUser();
+                            },
                             child: Icon(
                               _isMapLockedToUser ? Icons.gps_fixed : Icons.gps_not_fixed,
                               color: _isMapLockedToUser ? Colors.white : (isDark ? Colors.white70 : Colors.black54),
@@ -613,25 +844,34 @@ class _TrackingScreenState extends State<TrackingScreen> with TickerProviderStat
                           ),
                           const SizedBox(height: 8),
                         ],
+                        // ── Bus lock toggle — green when locked, dark when unlocked ──
                         if (_busAnimations.isNotEmpty)
                           FloatingActionButton(
                             heroTag: 'btn_center_bus',
                             mini: true,
-                            backgroundColor: const Color(0xFF28A745),
+                            backgroundColor: _isMapLockedToBus
+                                ? const Color(0xFF28A745)
+                                : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
+                            elevation: 4,
                             onPressed: () {
-                              final firstAnim = _busAnimations.values.first;
-                              if (_useOpenStreetMap) {
-                                _osmMapController?.move(
-                                  ll.LatLng(firstAnim.currentLatLng.latitude, firstAnim.currentLatLng.longitude),
-                                  15,
-                                );
+                              final wasLocked = _isMapLockedToBus;
+                              if (wasLocked) {
+                                setState(() {
+                                  _isMapLockedToBus = false;
+                                });
                               } else {
-                                _mapController?.animateCamera(
-                                  CameraUpdate.newLatLngZoom(firstAnim.currentLatLng, 15),
-                                );
+                                _focusOnBus(forceZoom: true);
                               }
                             },
-                            child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 250),
+                              child: Icon(
+                                _isMapLockedToBus ? Icons.directions_bus : Icons.directions_bus_filled,
+                                key: ValueKey(_isMapLockedToBus),
+                                color: _isMapLockedToBus ? Colors.white : (isDark ? Colors.white60 : Colors.black45),
+                                size: 20,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -855,211 +1095,3 @@ const String _darkMapStyle = '''
   }
 ]
 ''';
-
-// ── Animated Uber-style Bus Marker for OpenStreetMap layer ──────────────────
-class _AnimatedBusMarker extends StatefulWidget {
-  final double heading;
-  const _AnimatedBusMarker({required this.heading});
-
-  @override
-  State<_AnimatedBusMarker> createState() => _AnimatedBusMarkerState();
-}
-
-class _AnimatedBusMarkerState extends State<_AnimatedBusMarker>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _pulse;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
-    _pulse = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Outer pulsing ring — always upright
-        AnimatedBuilder(
-          animation: _pulse,
-          builder: (_, child) => Container(
-            width: 80 * _pulse.value,
-            height: 80 * _pulse.value,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF22C55E).withOpacity(0.22 * (1 - _pulse.value)),
-            ),
-          ),
-        ),
-        // Inner steady glow — always upright
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF22C55E).withOpacity(0.18),
-          ),
-        ),
-        // Bus capsule — UPRIGHT, never rotated
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF16A34A), Color(0xFF22C55E)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x9922C55E),
-                blurRadius: 12,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.directions_bus_rounded,
-            color: Colors.white,
-            size: 20,
-          ),
-        ),
-        // Directional heading arrow — ONLY this rotates
-        Positioned(
-          top: 0,
-          child: Transform.rotate(
-            angle: widget.heading * (math.pi / 180),
-            alignment: Alignment.bottomCenter,
-            child: CustomPaint(
-              size: const Size(10, 12),
-              painter: _HeadingArrowPainter(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Heading direction arrow painter ─────────────────────────────────────────
-class _HeadingArrowPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF22C55E)
-      ..style = PaintingStyle.fill;
-    final strokePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeJoin = StrokeJoin.round;
-
-    final path = Path()
-      ..moveTo(size.width / 2, 0)        // tip (top)
-      ..lineTo(size.width, size.height)   // bottom-right
-      ..lineTo(size.width / 2, size.height * 0.72) // inner notch
-      ..lineTo(0, size.height)            // bottom-left
-      ..close();
-
-    canvas.drawPath(path, paint);
-    canvas.drawPath(path, strokePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ── Pulsing Blue User Location Dot ───────────────────────────────────────────
-class _PulsingUserLocationDot extends StatefulWidget {
-  const _PulsingUserLocationDot();
-
-  @override
-  State<_PulsingUserLocationDot> createState() => _PulsingUserLocationDotState();
-}
-
-class _PulsingUserLocationDotState extends State<_PulsingUserLocationDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-    _animation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        AnimatedBuilder(
-          animation: _animation,
-          builder: (context, child) {
-            return Container(
-              width: 48 * _animation.value,
-              height: 48 * _animation.value,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF007AFF).withOpacity(1 - _animation.value),
-              ),
-            );
-          },
-        ),
-        Container(
-          width: 16,
-          height: 16,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Container(
-              width: 11,
-              height: 11,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF007AFF),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

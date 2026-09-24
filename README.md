@@ -3,7 +3,7 @@
 This repository contains the Passenger Mobile Application for the Smart Transit System, built with **Flutter**. This cross-platform app empowers commuters to effortlessly purchase digital tickets, top up their wallets, and track their transit vehicles in real time.
 
 ## 🚀 Features
-- **Live Bus Tracking:** Real-time map interface using `flutter_map` and WebSockets to show exact bus locations and headings.
+- **Live Bus Tracking:** Real-time map interface using Google Maps and WebSockets to show exact bus locations and headings.
 - **Dynamic QR Ticketing:** Generate secure, time-sensitive QR codes for boarding, utilizing `qr_flutter`.
 - **Wallet & Payments:** Top up your transit wallet or purchase tickets directly using the native **Stripe Payment Sheet**.
 - **Push Notifications:** Receive instant alerts regarding route changes, arrival times, and payment confirmations via **Firebase Cloud Messaging (FCM)**.
@@ -13,7 +13,7 @@ This repository contains the Passenger Mobile Application for the Smart Transit 
 - **Framework:** Flutter (Dart)
 - **State Management:** BLoC (`flutter_bloc`)
 - **Networking/Real-time:** Dio, Socket.io-client
-- **Maps:** flutter_map, latlong2
+- **Maps:** Google Maps (`google_maps_flutter`)
 - **Integrations:** Stripe (`flutter_stripe`), Firebase Core & Messaging
 
 ## 🛠️ Installation & Setup

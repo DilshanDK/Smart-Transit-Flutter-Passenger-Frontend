@@ -8,8 +8,8 @@ import '../storage/secure_storage.dart';
 class ApiClient {
   late final Dio dio;
   
-  // Default to local IP so physical devices on the same WiFi can connect
-  static final String fallbackBaseUrl = 'http://10.115.205.242:4000';
+  // Default to hosted production backend API
+  static final String fallbackBaseUrl = 'https://api.smart.transit.dilshandk.dev';
 
   static String get baseUrl {
     try {
